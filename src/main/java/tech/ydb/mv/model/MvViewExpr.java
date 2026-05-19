@@ -221,13 +221,32 @@ public class MvViewExpr implements MvSqlPosHolder {
             return false;
         }
         for (String key : tableInfo.getKey()) {
-            var typeSrc = topMost.getColumns().get(key);
-            var typeDst = tableInfo.getColumns().get(key);
-            if (typeSrc == null || !typeSrc.equals(typeDst)) {
+            if (!isDirectTopmostKey(topMostSource, key)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private boolean isDirectTopmostKey(MvJoinSource topMostSource, String keyName) {
+        MvColumn column = getColumnByName(keyName);
+        if (column == null || !column.isReference()) {
+            return false;
+        }
+        if (column.getSourceRef() != topMostSource) {
+            return false;
+        }
+        if (!keyName.equals(column.getSourceColumn())) {
+            return false;
+        }
+        var topMost = topMostSource.getTableInfo();
+        if (!topMost.getKey().contains(column.getSourceColumn())) {
+            return false;
+        }
+        var typeSrc = topMost.getColumns().get(column.getSourceColumn());
+        var tableInfo = getTableInfo();
+        var typeDst = tableInfo.getColumns().get(keyName);
+        return typeSrc != null && typeSrc.equals(typeDst);
     }
 
     @Override

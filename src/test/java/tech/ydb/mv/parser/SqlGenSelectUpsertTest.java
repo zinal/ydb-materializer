@@ -4,9 +4,13 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import tech.ydb.mv.SqlConstants;
+import tech.ydb.mv.model.MvColumn;
+import tech.ydb.mv.model.MvJoinMode;
+import tech.ydb.mv.model.MvJoinSource;
 import tech.ydb.mv.model.MvMetadata;
 import tech.ydb.mv.model.MvTableInfo;
 import tech.ydb.mv.model.MvViewExpr;
+import tech.ydb.table.values.PrimitiveType;
 
 /**
  * Test for MvSqlGen.makeSelect(), makePlainUpsert(), makePlainDelete(), and
@@ -148,6 +152,49 @@ public class SqlGenSelectUpsertTest {
 
         Assertions.assertNull(new MvSqlGen(target).makeConvertKeyToTarget(),
                 "Key conversion should be unavailable when the destination key is not mapped from the top source key");
+    }
+
+    @Test
+    public void testDestKeyDirectRequiresActualTopmostKeyMapping() {
+        MvViewExpr target = new MvViewExpr("mv_mismapped_key");
+
+        MvJoinSource main = new MvJoinSource();
+        main.setTableName("main_table");
+        main.setTableAlias("main");
+        main.setMode(MvJoinMode.MAIN);
+        main.setTableInfo(MvTableInfo.newBuilder("main_table")
+                .addColumn("id", PrimitiveType.Int32)
+                .addColumn("sub_id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+        target.getSources().add(main);
+
+        MvJoinSource sub = new MvJoinSource();
+        sub.setTableName("sub_table");
+        sub.setTableAlias("sub");
+        sub.setMode(MvJoinMode.INNER);
+        sub.setTableInfo(MvTableInfo.newBuilder("sub_table")
+                .addColumn("id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+        target.getSources().add(sub);
+
+        MvColumn id = new MvColumn("id");
+        id.setSourceAlias("sub");
+        id.setSourceColumn("id");
+        id.setSourceRef(sub);
+        id.setType(PrimitiveType.Int32);
+        target.getColumns().add(id);
+
+        target.setTableInfo(MvTableInfo.newBuilder("mv_mismapped_key")
+                .addColumn("id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+
+        Assertions.assertFalse(target.isDestKeyDirect(),
+                "Matching key names and types are not enough when the output key comes from a joined table");
+        Assertions.assertNull(new MvSqlGen(target).makeConvertKeyToTarget(),
+                "Key conversion should still be unavailable for a secondary-table key");
     }
 
     private MvViewExpr parseGood1Target() {
