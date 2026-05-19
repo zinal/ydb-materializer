@@ -435,20 +435,25 @@ public class MvSqlParser {
                     msg = "Syntax error";
                 }
             }
-            int line = token != null ? token.getLine() : 0;
-            int column = token != null ? token.getCharPositionInLine() : 0;
-            parseTimeIssues.add(new MvIssue.ParserError(line, column, msg));
+            addParserError(token, msg);
             super.recover(recognizer, e);
         }
 
         @Override
         public Token recoverInline(Parser recognizer)
                 throws RecognitionException {
-            parseTimeIssues.add(new MvIssue.ParserError(
-                    recognizer.getCurrentToken().getLine(),
-                    recognizer.getCurrentToken().getCharPositionInLine(),
-                    "Unexpected token: " + recognizer.getCurrentToken().getText()));
+            Token token = recognizer.getCurrentToken();
+            String msg = token != null
+                    ? "Unexpected token: " + token.getText()
+                    : "Unexpected token";
+            addParserError(token, msg);
             return super.recoverInline(recognizer);
+        }
+
+        private void addParserError(Token token, String msg) {
+            int line = token != null ? token.getLine() : 0;
+            int column = token != null ? token.getCharPositionInLine() : 0;
+            parseTimeIssues.add(new MvIssue.ParserError(line, column, msg));
         }
     }
 
