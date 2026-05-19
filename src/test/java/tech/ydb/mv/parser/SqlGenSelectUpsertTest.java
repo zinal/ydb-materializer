@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import tech.ydb.mv.SqlConstants;
 import tech.ydb.mv.model.MvColumn;
+import tech.ydb.mv.model.MvComputation;
 import tech.ydb.mv.model.MvJoinMode;
 import tech.ydb.mv.model.MvJoinSource;
 import tech.ydb.mv.model.MvMetadata;
@@ -195,6 +196,38 @@ public class SqlGenSelectUpsertTest {
                 "Matching key names and types are not enough when the output key comes from a joined table");
         Assertions.assertNull(new MvSqlGen(target).makeConvertKeyToTarget(),
                 "Key conversion should still be unavailable for a secondary-table key");
+    }
+
+    @Test
+    public void testComputedTopmostKeyUsesKeyConversionForDelete() {
+        MvViewExpr target = new MvViewExpr("mv_computed_key");
+
+        MvJoinSource main = new MvJoinSource();
+        main.setTableName("main_table");
+        main.setTableAlias("main");
+        main.setMode(MvJoinMode.MAIN);
+        main.setTableInfo(MvTableInfo.newBuilder("main_table")
+                .addColumn("id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+        target.getSources().add(main);
+
+        MvColumn id = new MvColumn("id");
+        id.setComputation(new MvComputation("main.id + 1000").addSource(main, "id"));
+        id.setType(PrimitiveType.Int32);
+        target.getColumns().add(id);
+
+        target.setTableInfo(MvTableInfo.newBuilder("mv_computed_key")
+                .addColumn("id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+
+        Assertions.assertFalse(target.isDestKeyDirect(),
+                "Computed keys cannot reuse the source CDC key unchanged");
+        String convertSql = new MvSqlGen(target).makeConvertKeyToTarget();
+        Assertions.assertNotNull(convertSql,
+                "Computed keys from topmost source keys should be converted before DELETE");
+        Assertions.assertTrue(convertSql.contains("main.id + 1000 AS id"));
     }
 
     private MvViewExpr parseGood1Target() {

@@ -205,10 +205,10 @@ public class MvViewExpr implements MvSqlPosHolder {
     }
 
     /**
-     * Returns true when the destination table's primary key matches the topmost
-     * source's primary key (as mapped to output column names). When false,
-     * DELETE operations require key-based transformation to obtain full
-     * destination keys.
+     * Returns true when the destination table's primary key can reuse the
+     * topmost source CDC key unchanged. Computed or renamed keys can still be
+     * safe for DELETE processing, but they first need key conversion instead of
+     * this direct path.
      */
     public boolean isDestKeyDirect() {
         var topMostSource = getTopMostSource();
