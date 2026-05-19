@@ -225,6 +225,13 @@ public class MvChangesMultiDictTest {
         return dict;
     }
 
+    private MvRowFilter findFilter(ArrayList<MvRowFilter> filters, MvViewExpr target) {
+        return filters.stream()
+                .filter(filter -> filter.getTarget() == target)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing filter for " + target.getName()));
+    }
+
     @Test
     public void testSingleDictRelevantFieldChange() {
         // Test: Single dictionary with relevant field change
@@ -244,20 +251,30 @@ public class MvChangesMultiDictTest {
         }
         assertTrue(filteredTargets.contains(targetSingleDict));
         assertTrue(filteredTargets.contains(targetMultiDict));
+
+        MvRowFilter singleFilter = findFilter(filters, targetSingleDict);
+        assertEquals(1, singleFilter.getBlocks().size());
+        assertEquals(1, singleFilter.getBlocks().get(0).getStartPos());
+        assertEquals(1, singleFilter.getBlocks().get(0).getLength());
+        assertTrue(singleFilter.matches(new Comparable<?>[]{100L, 1L}));
+        assertTrue(singleFilter.matches(new Comparable<?>[]{200L, 2L}));
+        assertFalse(singleFilter.matches(new Comparable<?>[]{300L, 99L}));
+
+        MvRowFilter multiFilter = findFilter(filters, targetMultiDict);
+        assertEquals(1, multiFilter.getBlocks().size());
+        assertEquals(1, multiFilter.getBlocks().get(0).getStartPos());
+        assertEquals(1, multiFilter.getBlocks().get(0).getLength());
+        assertTrue(multiFilter.matches(new Comparable<?>[]{100L, 1L}));
+        assertFalse(multiFilter.matches(new Comparable<?>[]{300L, 99L}));
     }
 
     @Test
     public void testSingleDictNonRelevantFieldChange() {
-        // Test: Single dictionary with non-relevant field change - test individual toFilter method to avoid NPE bug
+        // Test: Single dictionary with non-relevant field change
         MvChangesSingleDict dict1Changes = createDictChanges("dict1", "description", 1L, 2L);
         changes.addItem(dict1Changes);
 
-        MvRowFilter filter1 = changes.toFilter(handler, targetSingleDict);
-        MvRowFilter filter2 = changes.toFilter(handler, targetMultiDict);
-
-        // Should return null when no relevant changes
-        assertNull(filter1);
-        assertNull(filter2);
+        assertTrue(changes.toFilters(handler).isEmpty());
     }
 
     @Test
@@ -330,18 +347,13 @@ public class MvChangesMultiDictTest {
 
     @Test
     public void testTwoDictsBothNonRelevant() {
-        // Test: Two dictionaries with non-relevant field changes - test individual toFilter method to avoid NPE bug
+        // Test: Two dictionaries with non-relevant field changes
         MvChangesSingleDict dict1Changes = createDictChanges("dict1", "description", 1L, 2L);
         MvChangesSingleDict dict2Changes = createDictChanges("dict2", "metadata", 3L, 4L);
         changes.addItem(dict1Changes);
         changes.addItem(dict2Changes);
 
-        MvRowFilter filter1 = changes.toFilter(handler, targetSingleDict);
-        MvRowFilter filter2 = changes.toFilter(handler, targetMultiDict);
-
-        // Should return null when no relevant changes
-        assertNull(filter1);
-        assertNull(filter2);
+        assertTrue(changes.toFilters(handler).isEmpty());
     }
 
     @Test
@@ -387,7 +399,7 @@ public class MvChangesMultiDictTest {
 
     @Test
     public void testThreeDictsAllNonRelevant() {
-        // Test: Three dictionaries with all non-relevant field changes - test individual toFilter method to avoid NPE bug
+        // Test: Three dictionaries with all non-relevant field changes
         MvChangesSingleDict dict1Changes = createDictChanges("dict1", "description", 1L, 2L);
         MvChangesSingleDict dict2Changes = createDictChanges("dict2", "metadata", 3L, 4L);
         MvChangesSingleDict dict3Changes = createDictChanges("dict3", "extra", 5L, 6L);
@@ -395,37 +407,26 @@ public class MvChangesMultiDictTest {
         changes.addItem(dict2Changes);
         changes.addItem(dict3Changes);
 
-        MvRowFilter filter1 = changes.toFilter(handler, targetSingleDict);
-        MvRowFilter filter2 = changes.toFilter(handler, targetMultiDict);
-
-        // Should return null when no relevant changes
-        assertNull(filter1);
-        assertNull(filter2);
+        assertTrue(changes.toFilters(handler).isEmpty());
     }
 
     @Test
     public void testEmptyChanges() {
-        // Test: No dictionary changes - test individual toFilter method to avoid NPE bug
-        MvRowFilter filter1 = changes.toFilter(handler, targetSingleDict);
-        MvRowFilter filter2 = changes.toFilter(handler, targetMultiDict);
-
-        // Should return null when no relevant changes
-        assertNull(filter1);
-        assertNull(filter2);
+        // Test: No dictionary changes
+        assertTrue(changes.isEmpty());
+        assertFalse(changes.hasKnownChanges("dict1"));
+        assertTrue(changes.toFilters(handler).isEmpty());
     }
 
     @Test
     public void testEmptyDictChanges() {
-        // Test: Dictionary changes with no field changes - test individual toFilter method to avoid NPE bug
+        // Test: Dictionary changes with no field changes
         MvChangesSingleDict dict1Changes = new MvChangesSingleDict("dict1");
         changes.addItem(dict1Changes);
 
-        MvRowFilter filter1 = changes.toFilter(handler, targetSingleDict);
-        MvRowFilter filter2 = changes.toFilter(handler, targetMultiDict);
-
-        // Should return null when no relevant changes
-        assertNull(filter1);
-        assertNull(filter2);
+        assertTrue(changes.isEmpty());
+        assertFalse(changes.hasKnownChanges("dict1"));
+        assertTrue(changes.toFilters(handler).isEmpty());
     }
 
     @Test
@@ -518,16 +519,12 @@ public class MvChangesMultiDictTest {
 
     @Test
     public void testNonExistentDictChanges() {
-        // Test: Changes for dictionary that doesn't exist in handler - test individual toFilter method to avoid NPE bug
+        // Test: Changes for dictionary that doesn't exist in handler
         MvChangesSingleDict nonExistentChanges = createDictChanges("non_existent", "field", 1L, 2L);
         changes.addItem(nonExistentChanges);
 
-        MvRowFilter filter1 = changes.toFilter(handler, targetSingleDict);
-        MvRowFilter filter2 = changes.toFilter(handler, targetMultiDict);
-
-        // Should return null when no relevant changes (non-existent dict not in handler)
-        assertNull(filter1);
-        assertNull(filter2);
+        assertTrue(changes.hasKnownChanges("non_existent"));
+        assertTrue(changes.toFilters(handler).isEmpty());
     }
 
     @Test

@@ -90,13 +90,56 @@ public class MvWorkerSelectorTest {
     }
 
     @Test
-    public void techSelectWorkerLoader() {
-        MvWorkerSelector sw = new SW(10);
+    public void testRangeRefreshDistributesPrefixesAcrossWorkers() {
+        SW sw = new SW(10);
         sw.refresh(null);
 
         var chooser = (MvWorkerSelector.ChooserRange) sw.getChooser();
         Assertions.assertEquals(12, chooser.getItems().size());
-        System.out.println("Chooser items: " + chooser.getItems());
+
+        MvKeyPrefix[] prefixes = sw.readPrefixes(null);
+        int[] expectedWorkers = {0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 8, 9};
+        for (int i = 0; i < prefixes.length; ++i) {
+            Assertions.assertEquals(expectedWorkers[i], chooser.getItems().get(prefixes[i]),
+                    "Unexpected worker for prefix " + i);
+        }
+
+        MvKeyInfo keyInfo = sw.getKeyInfo();
+        Assertions.assertEquals(0, sw.choose(KV(YS().add("key1", 50).add("key2", 1L), keyInfo)));
+        Assertions.assertEquals(1, sw.choose(KV(YS().add("key1", 250).add("key2", 1L), keyInfo)));
+        Assertions.assertEquals(5, sw.choose(KV(YS().add("key1", 600).add("key2", 1500L), keyInfo)));
+        Assertions.assertEquals(9, sw.choose(KV(YS().add("key1", 950).add("key2", 1L), keyInfo)));
+    }
+
+    @Test
+    public void testRangeRefreshAssignsDistinctWorkersWhenWorkersOutnumberPrefixes() {
+        SW sw = new SW(20);
+        sw.refresh(null);
+
+        var chooser = (MvWorkerSelector.ChooserRange) sw.getChooser();
+        MvKeyPrefix[] prefixes = sw.readPrefixes(null);
+        for (int i = 0; i < prefixes.length; ++i) {
+            Assertions.assertEquals(i + 1, chooser.getItems().get(prefixes[i]),
+                    "Each prefix should get its own non-zero worker when capacity allows");
+        }
+
+        MvKeyInfo keyInfo = sw.getKeyInfo();
+        Assertions.assertEquals(1, sw.choose(KV(YS().add("key1", 50).add("key2", 1L), keyInfo)));
+        Assertions.assertEquals(20 - 1, sw.choose(KV(YS().add("key1", 950).add("key2", 1L), keyInfo)));
+    }
+
+    @Test
+    public void testHashSelectorUsesHashModuloAndDoesNotRefreshPrefixes() {
+        MvWorkerSelector sw = new MvWorkerSelector(makeTableInfo(), 7, MvConfig.PartitioningStrategy.HASH);
+        Assertions.assertInstanceOf(MvWorkerSelector.ChooserHash.class, sw.getChooser());
+
+        sw.refresh(null);
+        Assertions.assertInstanceOf(MvWorkerSelector.ChooserHash.class, sw.getChooser());
+
+        MvKeyInfo keyInfo = sw.getKeyInfo();
+        MvKey key = KV(YS().add("key1", 123).add("key2", 456L), keyInfo);
+        int expectedWorker = (int) (Integer.toUnsignedLong(key.hashCode()) % 7);
+        Assertions.assertEquals(expectedWorker, sw.choose(key));
     }
 
     private static MvTableInfo makeTableInfo() {
