@@ -73,6 +73,7 @@ Basic materialized view:
 ```sql
 CREATE ASYNC MATERIALIZED VIEW <view_name>
   [DESTINATION <connection_name>]
+  [OPTIONS <option_name> '<option_value>' [, <option_name> '<option_value>' ...]]
 AS
   SELECT <column_definitions>
   FROM <main_table> AS <alias>
@@ -82,12 +83,14 @@ AS
 
 - The `SELECT` clause defines the list of tables being used as sources for the MV, as well as the relations between the source tables, in the form of a limited SQL query.
 - The optional `DESTINATION` clause allows to put the MV into a separate database (see the related section below).
+- The optional `OPTIONS` clause configures view-level behavior (see the related section below).
 
 Composite materialized view:
 
 ```sql
 CREATE ASYNC MATERIALIZED VIEW <view_name>
   [DESTINATION <connection_name>]
+  [OPTIONS <option_name> '<option_value>' [, <option_name> '<option_value>' ...]]
 AS
   (SELECT <column_definitions>
    FROM <main_table1> AS <alias>
@@ -146,6 +149,48 @@ AS
 ```
 
 If the `DESTINATION` clause is omitted, the materialized view is written to the main database connection.
+
+#### View options
+
+Optional view behavior is configured with the `OPTIONS` clause. It may appear after the optional `DESTINATION` clause and before `AS`:
+
+```sql
+CREATE ASYNC MATERIALIZED VIEW <view_name>
+  [DESTINATION <connection_name>]
+  OPTIONS <option_name> '<option_value>' [, <option_name> '<option_value>' ...]
+AS
+  SELECT ...
+```
+
+Currently supported options:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `SKIP_DELETES` | boolean | `false` | When `true`, ignore `DELETE` events from all input changefeeds and do not issue `DELETE` against the MV table. `UPSERT` processing is unchanged. |
+
+Boolean values are case-insensitive. Accepted forms include `true` / `false`, `yes` / `no`, `1` / `0`, and `y` / `n` / `t` / `f`.
+
+Example:
+
+```sql
+CREATE ASYNC MATERIALIZED VIEW `skipdel_test/mv`
+  OPTIONS SKIP_DELETES 'true'
+AS
+  SELECT main.id AS id, main.val AS val, fact.extra AS extra
+  FROM `skipdel_test/main` AS main
+  INNER JOIN `skipdel_test/fact` AS fact
+    ON main.c1 = fact.c1 AND main.c2 = fact.c2;
+```
+
+When `SKIP_DELETES` is enabled:
+
+- Rows are still refreshed on `UPSERT` events from `STREAM` and `BATCH` inputs, including updates on joined tables.
+- `DELETE` events on source tables are not propagated to the MV; existing MV rows remain until removed out of band or overwritten by a later `UPSERT` for the same MV key.
+- The MV may diverge from the result of the defining `SELECT` over current source data after source rows are deleted or no longer satisfy join conditions.
+
+Use this option when deletes in source tables should not remove denormalized MV rows (for example, append-only facts or soft-delete patterns where the MV is treated as a historical snapshot).
+
+In `SQL` and `SQL_DEBUG` output modes, generated `DELETE` statements are annotated as skipped at runtime when this option is enabled.
 
 #### Column Definitions
 
