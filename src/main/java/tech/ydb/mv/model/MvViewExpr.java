@@ -205,10 +205,10 @@ public class MvViewExpr implements MvSqlPosHolder {
     }
 
     /**
-     * Returns true when the destination table's primary key matches the topmost
-     * source's primary key (as mapped to output column names). When false,
-     * DELETE operations require key-based transformation to obtain full
-     * destination keys.
+     * @return true when the destination table's primary key can reuse the
+     * topmost source CDC key unchanged. Computed or renamed keys can still be
+     * safe for DELETE processing, but they first need key conversion instead of
+     * this direct path.
      */
     public boolean isDestKeyDirect() {
         var topMostSource = getTopMostSource();
@@ -220,9 +220,22 @@ public class MvViewExpr implements MvSqlPosHolder {
         if (tableInfo.getKey().size() != topMost.getKey().size()) {
             return false;
         }
-        for (String key : tableInfo.getKey()) {
-            var typeSrc = topMost.getColumns().get(key);
-            var typeDst = tableInfo.getColumns().get(key);
+        for (String keyName : tableInfo.getKey()) {
+            MvColumn column = getColumnByName(keyName);
+            if (column == null || !column.isReference()) {
+                return false;
+            }
+            if (column.getSourceRef() != topMostSource) {
+                return false;
+            }
+            if (!keyName.equals(column.getSourceColumn())) {
+                return false;
+            }
+            if (!topMost.getKey().contains(column.getSourceColumn())) {
+                return false;
+            }
+            var typeSrc = topMost.getColumns().get(column.getSourceColumn());
+            var typeDst = tableInfo.getColumns().get(keyName);
             if (typeSrc == null || !typeSrc.equals(typeDst)) {
                 return false;
             }
