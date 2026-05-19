@@ -76,15 +76,9 @@ public class MvValidateSql {
         if (part.getFilter() != null) {
             validateFilter(part, sg, exprColumns, knownIssues);
         }
-        if (exprColumns.size() > 1) {
-            for (MvColumn current : exprColumns) {
-                // safe placeholders for all but the current column
-                // safe placeholder for WHERE filter
-                validateColumn(part, current, sg, exprColumns, knownIssues);
-            }
-        } else if (exprColumns.size() == 1) {
-            // single expression column
-            MvColumn current = exprColumns.iterator().next();
+        for (MvColumn current : exprColumns) {
+            // using safe placeholders for all but the current column
+            // using safe placeholder for WHERE filter
             validateColumn(part, current, sg, exprColumns, knownIssues);
         }
         if (knownIssues.isEmpty()) {
