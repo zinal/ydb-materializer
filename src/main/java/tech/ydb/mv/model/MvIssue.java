@@ -253,6 +253,25 @@ public interface MvIssue extends MvSqlPosHolder {
         }
     }
 
+    public static class MissingDestinationKeyColumn extends Error {
+
+        private final MvViewExpr target;
+        private final String keyColumnName;
+
+        public MissingDestinationKeyColumn(MvViewExpr target, String keyColumnName) {
+            super(target.getSqlPos());
+            this.target = target;
+            this.keyColumnName = keyColumnName;
+        }
+
+        @Override
+        public String getMessage() {
+            return "Missing destination primary key column `" + keyColumnName
+                    + "` in output of target `" + target.getName()
+                    + "` at " + sqlPos;
+        }
+    }
+
     /**
      * Normally never reported, UnknownOutputColumn is typically used instead.
      */

@@ -131,6 +131,7 @@ public class MvValidateBasic {
         }
         mt.getSources().forEach(src -> checkJoinConditions(mt, src));
         mt.getColumns().forEach(column -> checkTargetOutputColumn(mt, column));
+        checkDestinationKeyColumns(mt);
         if (mt.getFilter() != null) {
             checkTargetFilter(mt, mt.getFilter());
         }
@@ -215,6 +216,17 @@ public class MvValidateBasic {
                     context.addIssue(new MvIssue.UnknownColumnInCondition(
                             mt, cond, cond.getSecondAlias(), cond.getSecondColumn()));
                 }
+            }
+        }
+    }
+
+    private void checkDestinationKeyColumns(MvViewExpr mt) {
+        if (mt.getTableInfo() == null) {
+            return;
+        }
+        for (String keyName : mt.getTableInfo().getKey()) {
+            if (mt.getColumnByName(keyName) == null) {
+                context.addIssue(new MvIssue.MissingDestinationKeyColumn(mt, keyName));
             }
         }
     }

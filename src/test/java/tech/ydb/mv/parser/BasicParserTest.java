@@ -461,6 +461,36 @@ CREATE ASYNC HANDLER `schema3/h_dup_alias` CONSUMER iddqd
     }
 
     @Test
+    public void missingDestinationKeyColumnTest() {
+        String sql = """
+CREATE ASYNC MATERIALIZED VIEW `schema3/mv_missing_pk` AS
+SELECT main.c1 AS c1
+FROM `schema3/main_table` AS main;
+
+CREATE ASYNC HANDLER `schema3/h_missing_pk` CONSUMER iddqd
+  PROCESS `schema3/mv_missing_pk`,
+  INPUT `schema3/main_table` CHANGEFEED cf1 AS STREAM;
+""";
+        MvMetadata mc = new MvSqlParser(sql).fill();
+        Assertions.assertTrue(mc.isValid());
+
+        HashMap<String, MvTableInfo> info = new HashMap<>();
+        info.put("schema3/main_table", SqlConstants.tiMainTable("schema3/main_table"));
+        info.put("schema3/mv_missing_pk", MvTableInfo.newBuilder("schema3/mv_missing_pk")
+                .addColumn("id", PrimitiveType.Int32)
+                .addColumn("c1", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+
+        MvDescriber dummy = (tabname, destination) -> info.get(tabname);
+        mc.linkAndValidate(dummy);
+
+        Assertions.assertFalse(mc.isValid());
+        Assertions.assertTrue(mc.getErrors().stream()
+                .anyMatch(MvIssue.MissingDestinationKeyColumn.class::isInstance));
+    }
+
+    @Test
     public void unknownOutputColumnForComputationTest() {
         String sql = """
 CREATE ASYNC MATERIALIZED VIEW `schema3/mv_mismatch` AS
