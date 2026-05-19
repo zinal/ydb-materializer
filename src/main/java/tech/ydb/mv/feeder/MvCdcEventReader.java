@@ -120,7 +120,14 @@ class MvCdcEventReader extends AbstractReadEventHandler {
 
         long submitStart = System.nanoTime();
         try {
-            sink.submit(records, new MvCdcCommitHandler(this, event, records.size()));
+            MvCdcCommitHandler handler = new MvCdcCommitHandler(this, event, records.size());
+            boolean submitted = sink.submit(records, handler);
+            if (!submitted) {
+                LOG.error("Feeder `{}` for topic `{}` submitted only part of {} parsed CDC record(s); "
+                        + "leaving the topic event uncommitted for replay",
+                        owner.getName(), topicPath, records.size());
+                return;
+            }
             MvMetrics.recordCdcSubmit(scope, submitStart, records.size());
         } catch (Exception ex) {
             // We should not throw from onMessages(), as it stops the CDC reader.
