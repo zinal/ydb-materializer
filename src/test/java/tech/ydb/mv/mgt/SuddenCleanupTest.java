@@ -228,7 +228,7 @@ public class SuddenCleanupTest extends MgmtTestBase {
     $colindex = (SELECT COALESCE(MAX(statement_no),0) + 1 AS statement_no FROM `test1/statements`);
     UPSERT INTO `test1/statements` SELECT statement_no, @@
     CREATE ASYNC MATERIALIZED VIEW `data_%1$d/mv` AS
-        SELECT main.id AS main_id, sub.id AS sub_id, main.data1 AS data1, sub.data2 AS data2
+        SELECT main.id AS id_main, sub.id AS id_sub, main.data1 AS data1, sub.data2 AS data2
         FROM `data_%1$d/main` AS main
         LEFT JOIN `data_%1$d/sub` AS sub
           ON main.id = sub.main_ref;
