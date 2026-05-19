@@ -24,7 +24,7 @@ public class MvLiteral {
             this.pojo = true;
         } else if ("false".equalsIgnoreCase(value)) {
             this.pojo = false;
-        } else if (value.matches("^[+-]?[1-9][0-9]*$")) {
+        } else if (value.matches("^[+-]?(0|[1-9][0-9]*)$")) {
             this.pojo = (long) Long.parseLong(value);
         } else if (value.startsWith("'") && value.endsWith("'")) {
             this.pojo = value.substring(1, value.length()-1);
