@@ -2,6 +2,8 @@
 [![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Frepo1.maven.org%2Fmaven2%2Ftech%2Fydb%2Fapps%2Fydb-materializer%2Fmaven-metadata.xml)](https://mvnrepository.com/artifact/tech.ydb.apps/ydb-materializer)
 [![Publish](https://img.shields.io/github/actions/workflow/status/ydb-platform/ydb-materializer/publish.yaml)](https://github.com/ydb-platform/ydb-materializer/actions/workflows/publish.yaml)
 
+**Языки:** [English](README.md) | [Русский](README-ru.md)
+
 # Процессор материализованных представлений YDB
 
 YDB Materializer — это Java-приложение, которое обеспечивает наполнение данными управляемых пользователем материализованных представлений в YDB.
@@ -13,7 +15,7 @@ YDB Materializer — это Java-приложение, которое обесп
 [Скачать приложение можно на странице релизов](https://github.com/ydb-platform/ydb-materializer/releases).
 
 ## Минимальный исполняемый пример
-Файлы для простого примера на одной таблице:
+Файлы для минимального примера MV:
 - `scripts/example-tables.sql` (создание таблиц и changefeed)
 - `scripts/example-job1.sql` (определение MV и задания обработки)
 - `scripts/example-job1.xml` (настройки приложения)
@@ -45,6 +47,8 @@ YDB Materializer может быть встроен как библиотека 
 - работу в режиме сервиса, выполняющего синхронизацию изменений из исходных таблиц в таблицы материализованных представлений.
 
 В режиме встраиваемой библиотеки YDB Materializer реализует все перечисленные функции, предоставляя возможность их программного вызова через методы соответствующих классов.
+
+Архитектура и заметки для разработчиков — в [DEVELOP.md](DEVELOP.md).
 
 Зависимость Maven для встраивания YDB Materializer в приложение, используйте наиболее свежую версию со [страницы релизов](https://github.com/ydb-platform/ydb-materializer/releases):
 
@@ -202,7 +206,7 @@ AS
 #### Условия JOIN
 
 ```sql
-[INNER | LEFT] JOIN <table_name> AS <alias>
+[INNER | LEFT [OUTER]] JOIN <table_name> AS <alias>
   ON <join_condition> [AND <join_condition>]*
 ```
 
@@ -236,7 +240,7 @@ CREATE ASYNC HANDLER <handler_name>
 - **INPUT**: определяет входные таблицы и их потоки changefeed.
   - `STREAM`: обработка отдельных изменений в режиме реального времени.
   - `BATCH`: пакетная обработка накопленных изменений.
-- **CONSUMER**: необязательное имя потребителя для changefeed (если не указано, то используется имя обработчика).
+- **CONSUMER**: необязательное имя потребителя для changefeed (если не указано, используется имя обработчика; если имя обработчика содержит `/`, используется последний непустой сегмент пути).
 
 ### Непрозрачные выражения
 
@@ -392,7 +396,7 @@ java -jar ydb-materializer-*.jar config.xml JOB
 <entry key="job.coordination.timeout">10</entry>
 
 <!-- Настройки сканера справочников -->
-<entry key="job.dict.consumer">dictionary</entry>
+<entry key="job.dict.consumer">ydbmv$dictionary</entry>
 <entry key="job.dict.hist.table">mv/dict_hist</entry>
 <entry key="job.dict.scan.seconds">28800</entry>
 
@@ -416,7 +420,12 @@ java -jar ydb-materializer-*.jar config.xml JOB
 <entry key="mv.report.period.ms">10000</entry>
 <entry key="mv.runner.timeout.ms">30000</entry>
 <entry key="mv.coord.startup.ms">90000</entry>
-<entry key="mv.coord.runners.count">1</entry>
+<entry key="mv.coord.runners.count">0</entry>
+
+<!-- Метрики -->
+<entry key="metrics.enabled">false</entry>
+<entry key="metrics.port">7311</entry>
+<entry key="metrics.host">0.0.0.0</entry>
 
 </properties>
 ```
@@ -451,7 +460,7 @@ java -jar ydb-materializer-*.jar config.xml JOB
 - `job.coordination.timeout` - таймаут распределенной блокировки, секунд
 
 #### Настройки сканера справочников
-- `job.dict.consumer` - имя консьюмера для сбора информации об изменениях справочников
+- `job.dict.consumer` — имя консьюмера для changefeed таблиц-справочников (по умолчанию: `ydbmv$dictionary`)
 - `job.dict.hist.table` - альтернативное имя таблицы `mv/dict_hist`
 - `job.dict.scan.seconds` - период между проверками изменений справочников
 
@@ -724,18 +733,16 @@ INSERT INTO `mv/job_scans` (job_name, target_name, scan_settings, requested_at)
 VALUES ('my_handler', 'target_table', '{"rowsPerSecondLimit": 5000}', CurrentUtcTimestamp());
 ```
 
-### Мониторинг операций
+#### Мониторинг операций
 
-#### Проверка выполняемых задач
-
+**Проверка выполняемых задач:**
 ```sql
 SELECT rj.runner_id, rj.job_name, rj.started_at, r.runner_identity
 FROM `mv/runner_jobs` rj
 JOIN `mv/runners` r ON rj.runner_id = r.runner_id;
 ```
 
-#### Проверка состояния задачи
-
+**Проверка состояния задачи:**
 ```sql
 SELECT j.job_name, j.should_run,
        CASE WHEN rj.job_name IS NOT NULL THEN 'RUNNING'u ELSE 'STOPPED'u END as status
@@ -743,8 +750,7 @@ FROM `mv/jobs` j
 LEFT JOIN `mv/runner_jobs` rj ON j.job_name = rj.job_name;
 ```
 
-#### Проверка очереди команд:
-
+**Проверка очереди команд:**
 ```sql
 SELECT runner_id, command_no, command_type, job_name, command_status, created_at
 FROM `mv/commands`
@@ -752,8 +758,7 @@ WHERE command_status IN ('CREATED'u, 'TAKEN'u)
 ORDER BY created_at;
 ```
 
-#### Проверка состояния исполнителя
-
+**Проверка состояния исполнителя:**
 ```sql
 SELECT runner_id, runner_identity, updated_at
 FROM `mv/runners`
@@ -782,10 +787,10 @@ ORDER BY updated_at DESC;
 
 Система обеспечивает автоматическую отказоустойчивость:
 
-- Обнаружение сбоя исполнителя — исполнители периодически сообщают о своём состоянии; неактивные исполнители автоматически удаляются.
-- Перераспределение задач — при сбое исполнителей их задачи автоматически переназначаются доступным исполнителям.
-- Повтор команд — неудачные команды остаются в очереди для повторной попытки.
-- Выбор лидера — одновременно активен только один экземпляр координатора.
+1. **Обнаружение сбоя исполнителя** — исполнители периодически сообщают о своём состоянии; неактивные исполнители автоматически удаляются.
+2. **Перераспределение задач** — при сбое исполнителей их задачи автоматически переназначаются доступным исполнителям.
+3. **Повтор команд** — неудачные команды остаются в очереди для повторной попытки.
+4. **Выбор лидера** — одновременно активен только один экземпляр координатора.
 
 ### Развёртывание
 

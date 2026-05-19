@@ -8,10 +8,10 @@
 
 ## Обзор проекта для разработчиков
 
-- Главный класс: `tech.ydb.mv.App`. Артефакт: `tech.ydb.apps:ydb-materializer` (версия в `pom.xml`, сейчас `1.16-SNAPSHOT`).
+- Главный класс: `tech.ydb.mv.App`. Артефакт: `tech.ydb.apps:ydb-materializer` (версия в `pom.xml`, сейчас `1.17-SNAPSHOT`).
 - Сборка и дистрибутив: `mvn package` создаёт JAR и `*-bin.zip` (см. `src/main/assembly/zip.xml`).
 - Тесты: JUnit 5, `ydb-junit5-support`, Testcontainers; запуск: `mvn test` (переменные окружения — в `pom.xml`).
-- Зависимости: YDB SDK BOM 2.3.30, ANTLR 4.13.2, Log4j2, Gson, Prometheus metrics.
+- Зависимости: YDB SDK BOM 2.3.33, ANTLR 4.13.2, Log4j2, Gson, Prometheus metrics.
 
 Требования, использование, режимы, конфигурация и встраивание — в **README.md**.
 

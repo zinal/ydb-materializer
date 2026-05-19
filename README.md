@@ -2,6 +2,8 @@
 [![Maven metadata URL](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Frepo1.maven.org%2Fmaven2%2Ftech%2Fydb%2Fapps%2Fydb-materializer%2Fmaven-metadata.xml)](https://mvnrepository.com/artifact/tech.ydb.apps/ydb-materializer)
 [![Publish](https://img.shields.io/github/actions/workflow/status/ydb-platform/ydb-materializer/publish.yaml)](https://github.com/ydb-platform/ydb-materializer/actions/workflows/publish.yaml)
 
+**Languages:** [English](README.md) | [Русский](README-ru.md)
+
 # YDB materialized view processor
 
 The YDB Materializer is a Java application that ensures data population for user-managed materialized views in YDB.
@@ -13,7 +15,7 @@ The destination tables for MVs, source tables, required indexes and CDC streams 
 [See the Releases page for downloads](https://github.com/ydb-platform/ydb-materializer/releases).
 
 ## Minimal runnable example
-Use these files for a single-table MV example:
+Use these files for a minimal MV example:
 - `scripts/example-tables.sql` (create tables and changefeed)
 - `scripts/example-job1.sql` (MV + handler definition)
 - `scripts/example-job1.xml` (application config)
@@ -45,6 +47,8 @@ In standalone application mode, YDB Materializer implements:
 - service mode, in which it synchronizes the changes from source tables into the materialized view tables.
 
 In embedded library mode, YDB Materializer implements all the listed functions, providing the ability to call them programmatically through methods of the corresponding classes.
+
+For architecture and contributor-oriented notes, see [DEVELOP.md](DEVELOP.md) (Russian).
 
 Maven dependency for embedding the YDB Materializer into the application, use the latest version from the [releases page](https://github.com/ydb-platform/ydb-materializer/releases):
 
@@ -202,7 +206,7 @@ Each column in the SELECT clause can be:
 #### Join Clauses
 
 ```sql
-[INNER | LEFT] JOIN <table_name> AS <alias>
+[INNER | LEFT [OUTER]] JOIN <table_name> AS <alias>
   ON <join_condition> [AND <join_condition>]*
 ```
 
@@ -392,7 +396,7 @@ The configuration file is an XML properties file that defines connection paramet
 <entry key="job.coordination.timeout">10</entry>
 
 <!-- Dictionary scanner configuration -->
-<entry key="job.dict.consumer">dictionary</entry>
+<entry key="job.dict.consumer">ydbmv$dictionary</entry>
 <entry key="job.dict.hist.table">mv/dict_hist</entry>
 <entry key="job.dict.scan.seconds">28800</entry>
 
@@ -416,7 +420,12 @@ The configuration file is an XML properties file that defines connection paramet
 <entry key="mv.report.period.ms">10000</entry>
 <entry key="mv.runner.timeout.ms">30000</entry>
 <entry key="mv.coord.startup.ms">90000</entry>
-<entry key="mv.coord.runners.count">1</entry>
+<entry key="mv.coord.runners.count">0</entry>
+
+<!-- Metrics -->
+<entry key="metrics.enabled">false</entry>
+<entry key="metrics.port">7311</entry>
+<entry key="metrics.host">0.0.0.0</entry>
 
 </properties>
 ```
@@ -451,7 +460,7 @@ The configuration file is an XML properties file that defines connection paramet
 - `job.coordination.timeout` - Lock timeout for job coordination in seconds
 
 #### Dictionary scanner configuration
-- `job.dict.consumer` - consumer name to be used for dictionary table changefeeds
+- `job.dict.consumer` - Consumer name for dictionary table changefeeds (default: `ydbmv$dictionary`)
 - `job.dict.hist.table` - alternative name for `mv/dict_hist` table
 - `job.dict.scan.seconds` - period between the dictionary changes checks
 

@@ -34,8 +34,6 @@
 <entry key="job.input.file">example-job1.sql</entry>
 <!-- Table name for statements, in case TABLE mode is chosen -->
 <entry key="job.input.table">mv/statements</entry>
-<!-- If set to "true", attempt to create CDC streams and consumers -->
-<entry key="job.streams.create">false</entry>
 
 <!-- Handler configuration -->
 <!-- Comma-separated list of handler names to be activated on RUN action -->
