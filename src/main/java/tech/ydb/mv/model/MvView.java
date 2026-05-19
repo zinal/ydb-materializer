@@ -16,6 +16,7 @@ public class MvView implements MvSqlPosHolder {
     private final String destinationName;
     private final MvSqlPos sqlPos;
     private final HashMap<String, MvViewExpr> parts = new HashMap<>();
+    private final HashMap<MvViewOption, Object> options = new HashMap<>();
     // fields computed later or added based on the database metadata
     private final ArrayList<MvColumn> columns = new ArrayList<>();
     private MvTableInfo tableInfo;
@@ -24,6 +25,10 @@ public class MvView implements MvSqlPosHolder {
         this.viewName = viewName;
         this.destinationName = destinationName;
         this.sqlPos = sqlPos;
+        // initializing default values for all view options
+        for (var vo : MvViewOption.ENTRIES.values()) {
+            this.options.put(vo, vo.defaultValue());
+        }
     }
 
     public String getName() {
@@ -56,6 +61,14 @@ public class MvView implements MvSqlPosHolder {
 
     public HashMap<String, MvViewExpr> getParts() {
         return parts;
+    }
+
+    public HashMap<MvViewOption, Object> getOptions() {
+        return options;
+    }
+
+    public boolean isSkipDeletes() {
+        return Boolean.TRUE.equals(options.get(MvViewOption.SKIP_DELETES));
     }
 
     public ArrayList<MvColumn> getColumns() {
@@ -91,6 +104,9 @@ public class MvView implements MvSqlPosHolder {
 
     @Override
     public String toString() {
+        if (isSkipDeletes()) {
+            return "MV `" + viewName + "` (SKIP_DELETES)";
+        }
         return "MV `" + viewName + "`";
     }
 
