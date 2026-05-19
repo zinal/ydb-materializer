@@ -104,9 +104,6 @@ public class MvView implements MvSqlPosHolder {
 
     @Override
     public String toString() {
-        if (isSkipDeletes()) {
-            return "MV `" + viewName + "` (SKIP_DELETES)";
-        }
         return "MV `" + viewName + "`";
     }
 
