@@ -424,15 +424,20 @@ public class MvSqlParser {
         @Override
         public void recover(Parser recognizer, RecognitionException e) {
             String msg = e.getMessage();
+            Token token = e.getOffendingToken();
+            if (token == null) {
+                token = recognizer.getCurrentToken();
+            }
             if (msg == null) {
-                if (e.getOffendingToken() != null) {
-                    msg = "Offending token: [" + e.getOffendingToken().getText() + "]";
+                if (token != null) {
+                    msg = "Offending token: [" + token.getText() + "]";
+                } else {
+                    msg = "Syntax error";
                 }
             }
-            parseTimeIssues.add(new MvIssue.ParserError(
-                    e.getOffendingToken().getLine(),
-                    e.getOffendingToken().getCharPositionInLine(),
-                    msg));
+            int line = token != null ? token.getLine() : 0;
+            int column = token != null ? token.getCharPositionInLine() : 0;
+            parseTimeIssues.add(new MvIssue.ParserError(line, column, msg));
             super.recover(recognizer, e);
         }
 
