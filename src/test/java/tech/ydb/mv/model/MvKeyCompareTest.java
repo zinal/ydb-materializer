@@ -11,9 +11,9 @@ import tech.ydb.table.values.DecimalType;
 import tech.ydb.table.values.PrimitiveType;
 
 /**
- * Comprehensive test for MvKey.compareTo() method.
+ * Comprehensive tests for MvKey and MvKeyPrefix comparison semantics.
  * Tests comparison with different key lengths (1, 2, 3) and data types
- * (Integer, Long, YdbBytes, String, BigDecimal).
+ * (Integer, Long, YdbBytes, String, BigDecimal), including prefix behavior.
  *
  * @author zinal
  */
@@ -341,16 +341,31 @@ public class MvKeyCompareTest {
     }
 
     @Test
-    public void testDifferentKeyLengthComparison() {
+    public void testCrossTableComparisonThrows() {
         MvTableInfo singleKeyTable = createSingleIntKeyTable("table1");
         MvTableInfo doubleKeyTable = createDoubleKeyTable("table2");
 
         MvKey key1 = createKey(YS().add("key1", 10), singleKeyTable.getKeyInfo());
         MvKey key2 = createKey(YS().add("key1", 10).add("key2", "apple"), doubleKeyTable.getKeyInfo());
 
-        // Should throw IllegalArgumentException when comparing keys with different lengths
+        // Should throw IllegalArgumentException when comparing keys from different tables.
         Assertions.assertThrows(IllegalArgumentException.class, () -> key1.compareTo(key2),
-                "Should throw exception when comparing keys with different lengths");
+                "Should throw exception when comparing keys from different tables");
+    }
+
+    @Test
+    public void testSameTableDifferentLengthComparisonUsesCommonPrefix() {
+        MvTableInfo singleKeyTable = createSingleIntKeyTable("table1");
+        MvTableInfo doubleKeyTable = createDoubleKeyTable("table1");
+
+        MvKey key1 = createKey(YS().add("key1", 10), singleKeyTable.getKeyInfo());
+        MvKey key2 = createKey(YS().add("key1", 10).add("key2", "apple"), doubleKeyTable.getKeyInfo());
+        MvKey key3 = createKey(YS().add("key1", 11).add("key2", "apple"), doubleKeyTable.getKeyInfo());
+
+        Assertions.assertEquals(0, key1.compareTo(key2),
+                "Same-table key prefixes compare by the available common key parts");
+        Assertions.assertTrue(key1.compareTo(key3) < 0,
+                "Different first key parts should still drive comparison");
     }
 
 }

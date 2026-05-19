@@ -5,9 +5,12 @@ import org.junit.jupiter.api.Test;
 
 import tech.ydb.mv.SqlConstants;
 import tech.ydb.mv.model.MvMetadata;
+import tech.ydb.mv.model.MvTableInfo;
+import tech.ydb.mv.model.MvViewExpr;
 
 /**
- * Test for MvSqlGen.makeSelect() and MvSqlGen.makeUpsert() methods
+ * Test for MvSqlGen.makeSelect(), makePlainUpsert(), makePlainDelete(), and
+ * makeConvertKeyToTarget() methods.
  *
  * @author zinal
  */
@@ -69,7 +72,105 @@ public class SqlGenSelectUpsertTest {
         validateGeneratedSelectSql2(generatedSql, target);
     }
 
-    private void addTableInfoToTarget(tech.ydb.mv.model.MvViewExpr target) {
+    @Test
+    public void testMakePlainUpsert1() {
+        MvViewExpr target = parseGood1Target();
+        MvTableInfo targetInfo = SqlConstants.tiTarget("m1");
+        addTargetTableInfo(target, targetInfo);
+
+        String generatedSql = new MvSqlGen(target).makePlainUpsert();
+
+        Assertions.assertTrue(generatedSql.startsWith("DECLARE " + MvSqlGen.SYS_INPUT_VAR + " AS List<Struct<"),
+                "UPSERT should declare input rows");
+        Assertions.assertTrue(generatedSql.contains("id:Int32"),
+                "Input declaration should contain target key type");
+        Assertions.assertTrue(generatedSql.contains("c10:Text"),
+                "Input declaration should contain target text fields");
+        Assertions.assertTrue(generatedSql.contains("UPSERT INTO m1" + MvSqlGen.EOL),
+                "UPSERT should target the materialized view");
+        Assertions.assertTrue(generatedSql.contains("SELECT * FROM AS_TABLE(" + MvSqlGen.SYS_INPUT_VAR + ");"),
+                "UPSERT should write rows from the sys_input table parameter");
+        Assertions.assertFalse(generatedSql.contains(MvSqlGen.SYS_KEYS_VAR),
+                "Plain UPSERT should not declare key-only input");
+    }
+
+    @Test
+    public void testMakePlainDeleteUsesSourceKeyForDirectDestinationKey() {
+        MvViewExpr target = parseGood1Target();
+        addTargetTableInfo(target, SqlConstants.tiTarget("m1"));
+
+        String generatedSql = new MvSqlGen(target).makePlainDelete();
+
+        Assertions.assertTrue(generatedSql.startsWith("DECLARE " + MvSqlGen.SYS_KEYS_VAR
+                + " AS List<Struct<id:Int32>>;"),
+                "Direct destination keys should use the top-most source key type");
+        Assertions.assertTrue(generatedSql.contains("DELETE FROM m1" + MvSqlGen.EOL));
+        Assertions.assertTrue(generatedSql.contains("ON SELECT * FROM AS_TABLE(" + MvSqlGen.SYS_KEYS_VAR + ");"));
+    }
+
+    @Test
+    public void testMakePlainDeleteUsesDestinationKeyWhenKeysDiffer() {
+        MvViewExpr target = parseGood1Target();
+        addTargetTableInfo(target, MvTableInfo.newBuilder("m1")
+                .addColumn("c8", tech.ydb.table.values.PrimitiveType.Text)
+                .addKey("c8")
+                .build());
+
+        String generatedSql = new MvSqlGen(target).makePlainDelete();
+
+        Assertions.assertTrue(generatedSql.startsWith("DECLARE " + MvSqlGen.SYS_KEYS_VAR
+                + " AS List<Struct<c8:Text>>;"),
+                "Non-direct destination keys should use the target table key type");
+        Assertions.assertTrue(generatedSql.contains("DELETE FROM m1" + MvSqlGen.EOL));
+    }
+
+    @Test
+    public void testMakeConvertKeyToTargetForDirectKeyMapping() {
+        MvViewExpr target = parseGood1Target();
+        addTargetTableInfo(target, SqlConstants.tiTarget("m1"));
+
+        String generatedSql = new MvSqlGen(target).makeConvertKeyToTarget();
+
+        Assertions.assertNotNull(generatedSql);
+        Assertions.assertTrue(generatedSql.startsWith("DECLARE " + MvSqlGen.SYS_KEYS_VAR
+                + " AS List<Struct<id:Int32>>;"));
+        Assertions.assertTrue(generatedSql.contains("SELECT main.id AS id FROM AS_TABLE("
+                + MvSqlGen.SYS_KEYS_VAR + ") AS main"));
+    }
+
+    @Test
+    public void testMakeConvertKeyToTargetReturnsNullForNonTopmostKey() {
+        MvViewExpr target = parseGood1Target();
+        addTargetTableInfo(target, MvTableInfo.newBuilder("m1")
+                .addColumn("c8", tech.ydb.table.values.PrimitiveType.Text)
+                .addKey("c8")
+                .build());
+
+        Assertions.assertNull(new MvSqlGen(target).makeConvertKeyToTarget(),
+                "Key conversion should be unavailable when the destination key is not mapped from the top source key");
+    }
+
+    private MvViewExpr parseGood1Target() {
+        MvMetadata mc = new MvSqlParser(SqlConstants.SQL_GOOD1).fill();
+        Assertions.assertTrue(mc.isValid());
+        Assertions.assertEquals(1, mc.getViews().size());
+        var view = mc.getViews().values().iterator().next();
+        var target = view.getParts().values().iterator().next();
+        addTableInfoToTarget(target);
+        return target;
+    }
+
+    private void addTargetTableInfo(MvViewExpr target, MvTableInfo targetInfo) {
+        target.setTableInfo(targetInfo);
+        for (var column : target.getColumns()) {
+            var type = targetInfo.getColumns().get(column.getName());
+            if (type != null) {
+                column.setType(type);
+            }
+        }
+    }
+
+    private void addTableInfoToTarget(MvViewExpr target) {
         target.getSources().get(0).setTableInfo(
                 SqlConstants.tiMainTable("main_table")
         );
@@ -84,7 +185,7 @@ public class SqlGenSelectUpsertTest {
         );
     }
 
-    private void addTableInfoToTarget2(tech.ydb.mv.model.MvViewExpr target) {
+    private void addTableInfoToTarget2(MvViewExpr target) {
         target.getSources().get(0).setTableInfo(
                 SqlConstants.tiMainTable("schema3/main_table")
         );
@@ -99,7 +200,7 @@ public class SqlGenSelectUpsertTest {
         );
     }
 
-    private void validateGeneratedSelectSql1(String sql, tech.ydb.mv.model.MvViewExpr target) {
+    private void validateGeneratedSelectSql1(String sql, MvViewExpr target) {
         // Check for DECLARE statement
         Assertions.assertTrue(sql.startsWith("DECLARE $"),
                 "SQL should start with DECLARE statement");
@@ -185,7 +286,7 @@ public class SqlGenSelectUpsertTest {
         }
     }
 
-    private void validateGeneratedSelectSql2(String sql, tech.ydb.mv.model.MvViewExpr target) {
+    private void validateGeneratedSelectSql2(String sql, MvViewExpr target) {
         // Check for DECLARE statement
         Assertions.assertTrue(sql.startsWith("DECLARE $"),
                 "SQL should start with DECLARE statement");
@@ -327,7 +428,7 @@ public class SqlGenSelectUpsertTest {
                 "SQL should contain sub3.c5 reference");
     }
 
-    private void validateConstantsUsage(String sql, tech.ydb.mv.model.MvViewExpr target) {
+    private void validateConstantsUsage(String sql, MvViewExpr target) {
         // Check that all literals are properly formatted in the constants subquery
         for (var literal : target.getLiterals()) {
             String value = literal.getValue();

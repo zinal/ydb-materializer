@@ -146,7 +146,7 @@ public class MvKeyPathGeneratorTest {
         MvColumn columnD = new MvColumn("d_value", new MvSqlPos(3, 1));
         columnD.setSourceAlias("d");
         columnD.setSourceColumn("value");
-        columnD.setSourceRef(sourceC);
+        columnD.setSourceRef(sourceD);
         columnD.setType(PrimitiveType.Text);
         originalTarget.getColumns().add(columnD);
 
@@ -178,7 +178,7 @@ public class MvKeyPathGeneratorTest {
 
     @Test
     public void testGenerateKeyPath_OneStep() {
-        // Test transformation from B to A (optimized - B has a_id foreign key)
+        // Test transformation from B to A through the A->B join condition
         MvViewExpr result = new MvPathGenerator(originalTarget).extractKeysReverse(sourceB);
         assertNotNull(result);
 
@@ -290,6 +290,12 @@ public class MvKeyPathGeneratorTest {
         }
 
         assertEquals(1, result.getSources().size()); // Optimized: only D needed
+        assertEquals("d", result.getSources().get(0).getTableAlias());
+        assertEquals(MvJoinMode.MAIN, result.getSources().get(0).getMode());
+        assertEquals(1, result.getColumns().size());
+        assertEquals("id", result.getColumns().get(0).getName());
+        assertEquals("d", result.getColumns().get(0).getSourceAlias());
+        assertEquals("a_id", result.getColumns().get(0).getSourceColumn());
     }
 
     @Test
@@ -342,5 +348,16 @@ public class MvKeyPathGeneratorTest {
         if (PRINT_SQL) {
             System.out.println("*** Literal condition SQL: " + new MvSqlGen(result).makeSelect());
         }
+
+        assertEquals(1, result.getLiterals().size());
+        assertNotNull(result.getLiteral("'AAA'"));
+
+        MvJoinSource bInResult = result.getSourceByAlias("b");
+        assertNotNull(bInResult);
+        assertTrue(bInResult.getConditions().stream()
+                .anyMatch(condition -> condition.getSecondLiteral() != null
+                && "'AAA'".equals(condition.getSecondLiteral().getValue())
+                && "some".equals(condition.getFirstColumn())),
+                "Literal join condition on b.some should be preserved in the generated path");
     }
 }
