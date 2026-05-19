@@ -3,6 +3,7 @@ package tech.ydb.mv.apply;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import com.google.common.collect.Lists;
@@ -146,6 +147,10 @@ class ActionSync extends ActionBase implements MvApplyAction {
 
     private void deleteRows(List<MvKey> rowKeys) {
         var keysToDelete = extractDestKeys(rowKeys);
+        deleteDestRows(keysToDelete);
+    }
+
+    private void deleteDestRows(List<MvKey> keysToDelete) {
         if (keysToDelete.isEmpty()) {
             return;
         }
@@ -222,7 +227,11 @@ class ActionSync extends ActionBase implements MvApplyAction {
         for (List<MvKey> rd : Lists.partition(rowKeys, readBatchSize)) {
             // read the portion of data
             output.clear();
-            readRows(rd, output);
+            HashSet<MvKey> upsertedKeys = new HashSet<>();
+            readRows(rd, output, upsertedKeys);
+            if (!skipDeletes) {
+                deleteMissingRows(rd, upsertedKeys);
+            }
             for (List<StructValue> wr : Lists.partition(output, writeBatchSize)) {
                 // write the portion of data
                 runUpsert(wr);
@@ -250,6 +259,24 @@ class ActionSync extends ActionBase implements MvApplyAction {
         currentStatement.set(new StatementTiming(statement, startNs, "upsert"));
     }
 
+    private void deleteMissingRows(List<MvKey> topmostKeys, HashSet<MvKey> upsertedKeys) {
+        List<MvKey> expectedKeys = extractDestKeys(topmostKeys);
+        deleteDestRows(findMissingKeys(expectedKeys, upsertedKeys));
+    }
+
+    static List<MvKey> findMissingKeys(List<MvKey> expectedKeys, Set<MvKey> actualKeys) {
+        if (expectedKeys.isEmpty()) {
+            return Collections.emptyList();
+        }
+        ArrayList<MvKey> missing = new ArrayList<>();
+        for (MvKey key : expectedKeys) {
+            if (!actualKeys.contains(key)) {
+                missing.add(key);
+            }
+        }
+        return missing;
+    }
+
     private void finishStatement() {
         var timing = currentStatement.get();
         if (timing != null) {
@@ -264,6 +291,10 @@ class ActionSync extends ActionBase implements MvApplyAction {
     }
 
     private void readRows(List<MvKey> items, ArrayList<StructValue> output) {
+        readRows(items, output, null);
+    }
+
+    private void readRows(List<MvKey> items, ArrayList<StructValue> output, HashSet<MvKey> destKeys) {
         // perform the db query
         ResultSetReader result = readRows(items);
         if (result.getRowCount() == 0) {
@@ -273,6 +304,14 @@ class ActionSync extends ActionBase implements MvApplyAction {
         int[] positions = new int[rowType.getMembersCount()];
         for (int ix = 0; ix < positions.length; ++ix) {
             positions[ix] = result.getColumnIndex(rowType.getMemberName(ix));
+        }
+        MvKeyInfo destKeyInfo = target.getDestinationKeyInfo();
+        int[] keyPositions = null;
+        if (destKeys != null && destKeyInfo != null) {
+            keyPositions = new int[destKeyInfo.size()];
+            for (int ix = 0; ix < keyPositions.length; ++ix) {
+                keyPositions[ix] = result.getColumnIndex(destKeyInfo.getName(ix));
+            }
         }
         // convert the output to the desired structures
         while (result.next()) {
@@ -285,6 +324,14 @@ class ActionSync extends ActionBase implements MvApplyAction {
                 } else {
                     members[ix] = YdbConv.convert(result.getColumn(pos).getValue(), type);
                 }
+            }
+            if (keyPositions != null) {
+                Comparable<?>[] values = new Comparable<?>[destKeyInfo.size()];
+                for (int ix = 0; ix < keyPositions.length; ++ix) {
+                    int pos = keyPositions[ix];
+                    values[ix] = pos >= 0 ? YdbConv.toPojo(result.getColumn(pos).getValue()) : null;
+                }
+                destKeys.add(new MvKey(destKeyInfo, values));
             }
             output.add(rowType.newValueUnsafe(members));
         }
