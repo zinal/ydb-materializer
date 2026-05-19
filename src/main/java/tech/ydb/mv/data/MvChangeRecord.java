@@ -1,6 +1,7 @@
 package tech.ydb.mv.data;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * Change record produced by CDC/scan for a single table key.
@@ -84,6 +85,38 @@ public class MvChangeRecord {
     public String toString() {
         return "CR{" + "key=" + key + ", op=" + operationType
                 + ", before=" + imageBefore + ", after=" + imageAfter + '}';
+    }
+
+    /**
+     * Keep this change as the latest event for its key when it is newer than
+     * the stored one (by timestamp, with input order as tiebreaker).
+     */
+    public void recordLatest(Map<MvKey, LatestEvent> latestByKey, int order) {
+        LatestEvent prev = latestByKey.get(key);
+        if (prev == null || tv.isAfter(prev.tv)
+                || (tv.equals(prev.tv) && order > prev.order)) {
+            latestByKey.put(key, new LatestEvent(operationType, tv, order));
+        }
+    }
+
+    /**
+     * Latest CDC event recorded for a key during batch deduplication.
+     */
+    public static final class LatestEvent {
+
+        private final OpType operationType;
+        private final Instant tv;
+        private final int order;
+
+        LatestEvent(OpType operationType, Instant tv, int order) {
+            this.operationType = operationType;
+            this.tv = tv;
+            this.order = order;
+        }
+
+        public OpType getOperationType() {
+            return operationType;
+        }
     }
 
     /**

@@ -1,8 +1,10 @@
 package tech.ydb.mv.apply;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -126,23 +128,38 @@ class ActionSync extends ActionBase implements MvApplyAction {
 
     private void deduplicate(List<MvApplyTask> input,
             List<MvKey> upsert, List<MvKey> delete) {
-        HashSet<MvKey> tempUpsert = new HashSet<>();
-        HashSet<MvKey> tempDelete = new HashSet<>();
-        for (MvApplyTask task : input) {
-            MvChangeRecord cr = task.getData();
+        deduplicate(input, skipDeletes, upsert, delete);
+    }
+
+    /**
+     * Keep the latest CDC event per key. When UPSERT and DELETE collide on the
+     * same key, the operation with the most recent timestamp wins; input order
+     * breaks ties. WHERE-filter deletes ({@link #deleteMissingRows}) are not
+     * involved here.
+     */
+    static void deduplicate(List<MvApplyTask> input, boolean skipDeletes,
+            List<MvKey> upsert, List<MvKey> delete) {
+        Map<MvKey, MvChangeRecord.LatestEvent> latestByKey = new HashMap<>();
+        for (int i = 0; i < input.size(); ++i) {
+            MvChangeRecord cr = input.get(i).getData();
             switch (cr.getOperationType()) {
                 case UPSERT:
-                    tempUpsert.add(cr.getKey());
+                    cr.recordLatest(latestByKey, i);
                     break;
                 case DELETE:
                     if (!skipDeletes) {
-                        tempDelete.add(cr.getKey());
+                        cr.recordLatest(latestByKey, i);
                     }
                     break;
             }
         }
-        upsert.addAll(tempUpsert);
-        delete.addAll(tempDelete);
+        for (var entry : latestByKey.entrySet()) {
+            if (entry.getValue().getOperationType() == MvChangeRecord.OpType.UPSERT) {
+                upsert.add(entry.getKey());
+            } else {
+                delete.add(entry.getKey());
+            }
+        }
     }
 
     private void deleteRows(List<MvKey> rowKeys) {
@@ -288,10 +305,6 @@ class ActionSync extends ActionBase implements MvApplyAction {
             }
         }
         lastSqlStatement.set(null);
-    }
-
-    private void readRows(List<MvKey> items, ArrayList<StructValue> output) {
-        readRows(items, output, null);
     }
 
     private void readRows(List<MvKey> items, ArrayList<StructValue> output, HashSet<MvKey> destKeys) {
