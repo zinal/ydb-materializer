@@ -116,7 +116,7 @@ public class MvSqlGen implements AutoCloseable {
                 sb.append(type.toString()).append(" NOT NULL");
             }
         }
-        ArrayList<String> primaryKey = findMappedKeyColumns();
+        ArrayList<String> primaryKey = findTargetPrimaryKeyColumns();
         if (primaryKey != null && !primaryKey.isEmpty()) {
             if (index++ > 0) {
                 sb.append(",").append(EOL);
@@ -645,7 +645,17 @@ public class MvSqlGen implements AutoCloseable {
         return src.getTableInfo().getColumns().get(column.getSourceColumn());
     }
 
-    private ArrayList<String> findMappedKeyColumns() {
+    private ArrayList<String> findTargetPrimaryKeyColumns() {
+        // when having table information for the target, use it
+        MvTableInfo destInfo = target.getTableInfo();
+        if (destInfo != null) {
+            return new ArrayList<>(destInfo.getKey());
+        }
+        // only otherwise switch to mumbo-jumbo with topmost table
+        return findMappedTopmostKeyColumns();
+    }
+
+    private ArrayList<String> findMappedTopmostKeyColumns() {
         MvJoinSource topmost = target.getTopMostSource();
         if (topmost == null || topmost.getTableInfo() == null) {
             return null;

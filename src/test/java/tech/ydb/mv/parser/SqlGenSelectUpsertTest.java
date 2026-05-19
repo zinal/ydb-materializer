@@ -230,6 +230,97 @@ public class SqlGenSelectUpsertTest {
         Assertions.assertTrue(convertSql.contains("main.id + 1000 AS id"));
     }
 
+    @Test
+    public void testMakeCreateTableUsesDestinationPrimaryKeyWhenAvailable() {
+        MvViewExpr target = parseGood1Target();
+        addTargetTableInfo(target, MvTableInfo.newBuilder("m1")
+                .addColumn("id", PrimitiveType.Int32)
+                .addColumn("c1", PrimitiveType.Int32)
+                .addColumn("c2", PrimitiveType.Int32)
+                .addColumn("c3", PrimitiveType.Int32)
+                .addColumn("c8", PrimitiveType.Text)
+                .addColumn("c9", PrimitiveType.Text)
+                .addColumn("c10", PrimitiveType.Text)
+                .addColumn("c11", PrimitiveType.Text)
+                .addColumn("c12", PrimitiveType.Int32)
+                .addKey("c8")
+                .build());
+
+        String generatedSql = new MvSqlGen(target).makeCreateTable();
+
+        Assertions.assertTrue(generatedSql.contains("PRIMARY KEY (c8)"),
+                "CREATE TABLE should use destination table primary key columns");
+        Assertions.assertFalse(generatedSql.contains("PRIMARY KEY (id)"),
+                "CREATE TABLE should not infer primary key from the topmost source");
+    }
+
+    @Test
+    public void testMakeCreateTableFallsBackToTopmostPrimaryKeyWithoutDestinationInfo() {
+        MvViewExpr target = parseGood1Target();
+
+        String generatedSql = new MvSqlGen(target).makeCreateTable();
+
+        Assertions.assertTrue(generatedSql.contains("PRIMARY KEY (id)"),
+                "CREATE TABLE should fall back to topmost source key mapping");
+    }
+
+    @Test
+    public void testMakeCreateTableUsesComputedDestinationPrimaryKey() {
+        MvViewExpr target = new MvViewExpr("mv_computed_key");
+
+        MvJoinSource main = new MvJoinSource();
+        main.setTableName("main_table");
+        main.setTableAlias("main");
+        main.setMode(MvJoinMode.MAIN);
+        main.setTableInfo(MvTableInfo.newBuilder("main_table")
+                .addColumn("id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+        target.getSources().add(main);
+
+        MvColumn id = new MvColumn("id");
+        id.setComputation(new MvComputation("100000000l + CAST(main.id AS Int64)")
+                .addSource(main, "id"));
+        id.setType(PrimitiveType.Int64);
+        target.getColumns().add(id);
+
+        target.setTableInfo(MvTableInfo.newBuilder("mv_computed_key")
+                .addColumn("id", PrimitiveType.Int64)
+                .addKey("id")
+                .build());
+
+        String generatedSql = new MvSqlGen(target).makeCreateTable();
+
+        Assertions.assertTrue(generatedSql.contains("PRIMARY KEY (id)"),
+                "CREATE TABLE should use destination primary key for computed columns");
+    }
+
+    @Test
+    public void testMakeCreateTableOmitsPrimaryKeyForComputedColumnWithoutDestinationInfo() {
+        MvViewExpr target = new MvViewExpr("mv_computed_key");
+
+        MvJoinSource main = new MvJoinSource();
+        main.setTableName("main_table");
+        main.setTableAlias("main");
+        main.setMode(MvJoinMode.MAIN);
+        main.setTableInfo(MvTableInfo.newBuilder("main_table")
+                .addColumn("id", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+        target.getSources().add(main);
+
+        MvColumn id = new MvColumn("id");
+        id.setComputation(new MvComputation("100000000l + CAST(main.id AS Int64)")
+                .addSource(main, "id"));
+        id.setType(PrimitiveType.Int64);
+        target.getColumns().add(id);
+
+        String generatedSql = new MvSqlGen(target).makeCreateTable();
+
+        Assertions.assertFalse(generatedSql.contains("PRIMARY KEY"),
+                "Without destination metadata, computed keys cannot be inferred from the topmost source");
+    }
+
     private MvViewExpr parseGood1Target() {
         MvMetadata mc = new MvSqlParser(SqlConstants.SQL_GOOD1).fill();
         Assertions.assertTrue(mc.isValid());
