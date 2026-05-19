@@ -390,6 +390,28 @@ public interface MvIssue extends MvSqlPosHolder {
         }
     }
 
+    public static class DuplicateTableAlias extends Error {
+
+        private final MvViewExpr target;
+        private final MvJoinSource cur;
+        private final MvJoinSource prev;
+
+        public DuplicateTableAlias(MvViewExpr target, MvJoinSource cur, MvJoinSource prev) {
+            super(cur.getSqlPos());
+            this.target = target;
+            this.cur = cur;
+            this.prev = prev;
+        }
+
+        @Override
+        public String getMessage() {
+            return "Duplicate table alias `" + cur.getTableAlias()
+                    + "` in target " + target
+                    + " at " + sqlPos + ", already defined at "
+                    + prev.getSqlPos();
+        }
+    }
+
     public static class UnknownView extends Error {
 
         private final MvHandler handler;

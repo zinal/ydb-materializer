@@ -432,6 +432,35 @@ CREATE ASYNC HANDLER `schema3/h_mismatch` CONSUMER iddqd
     }
 
     @Test
+    public void duplicateTableAliasTest() {
+        String sql = """
+CREATE ASYNC MATERIALIZED VIEW `schema3/mv_dup_alias` AS
+SELECT main.id AS id
+FROM `schema3/main_table` AS main
+INNER JOIN `schema3/sub_table1` AS MAIN ON main.c1 = MAIN.c1;
+
+CREATE ASYNC HANDLER `schema3/h_dup_alias` CONSUMER iddqd
+  PROCESS `schema3/mv_dup_alias`,
+  INPUT `schema3/main_table` CHANGEFEED cf1 AS STREAM,
+  INPUT `schema3/sub_table1` CHANGEFEED cf1 AS STREAM;
+""";
+        MvMetadata mc = new MvSqlParser(sql).fill();
+        Assertions.assertTrue(mc.isValid());
+
+        HashMap<String, MvTableInfo> info = new HashMap<>();
+        info.put("schema3/main_table", SqlConstants.tiMainTable("schema3/main_table"));
+        info.put("schema3/sub_table1", SqlConstants.tiSubTable1("schema3/sub_table1"));
+        info.put("schema3/mv_dup_alias", SqlConstants.tiTarget("schema3/mv_dup_alias"));
+
+        MvDescriber dummy = (tabname, destination) -> info.get(tabname);
+        mc.linkAndValidate(dummy);
+
+        Assertions.assertFalse(mc.isValid());
+        Assertions.assertTrue(mc.getErrors().stream()
+                .anyMatch(MvIssue.DuplicateTableAlias.class::isInstance));
+    }
+
+    @Test
     public void unknownOutputColumnForComputationTest() {
         String sql = """
 CREATE ASYNC MATERIALIZED VIEW `schema3/mv_mismatch` AS

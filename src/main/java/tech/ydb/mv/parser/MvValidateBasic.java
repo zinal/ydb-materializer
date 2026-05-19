@@ -1,6 +1,9 @@
 package tech.ydb.mv.parser;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import tech.ydb.mv.model.MvColumn;
 import tech.ydb.mv.model.MvComputation;
@@ -96,6 +99,7 @@ public class MvValidateBasic {
     }
 
     private void checkViewPart(MvViewExpr mt) {
+        checkDuplicateSourceAliases(mt);
         if (mt.getTableInfo() == null) {
             context.addIssue(new MvIssue.MissingTargetTable(mt));
         }
@@ -129,6 +133,21 @@ public class MvValidateBasic {
         mt.getColumns().forEach(column -> checkTargetOutputColumn(mt, column));
         if (mt.getFilter() != null) {
             checkTargetFilter(mt, mt.getFilter());
+        }
+    }
+
+    private void checkDuplicateSourceAliases(MvViewExpr mt) {
+        Map<String, MvJoinSource> seen = new HashMap<>();
+        for (MvJoinSource src : mt.getSources()) {
+            String alias = src.getTableAlias();
+            if (alias == null) {
+                continue;
+            }
+            String key = alias.toLowerCase(Locale.ROOT);
+            MvJoinSource prev = seen.putIfAbsent(key, src);
+            if (prev != null) {
+                context.addIssue(new MvIssue.DuplicateTableAlias(mt, src, prev));
+            }
         }
     }
 
