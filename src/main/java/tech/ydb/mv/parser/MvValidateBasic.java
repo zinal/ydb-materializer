@@ -43,6 +43,30 @@ public class MvValidateBasic {
             checkChangefeeds();
             checkInputsVsTargets();
         }
+        if (context.isValid()) {
+            checkOutputColumnTypes();
+        }
+    }
+
+    private void checkOutputColumnTypes() {
+        for (MvView view : context.getViews().values()) {
+            for (MvViewExpr mt : view.getParts().values()) {
+                if (mt.getTableInfo() == null) {
+                    continue;
+                }
+                for (MvColumn column : mt.getColumns()) {
+                    if (column.getType() != null) {
+                        continue;
+                    }
+                    if (!column.isComputation()
+                            && mt.getTableInfo().getColumns().get(column.getName()) == null) {
+                        // UnknownOutputColumn is reported earlier for reference columns.
+                        continue;
+                    }
+                    context.addIssue(new MvIssue.MissingOutputColumnType(mt, column));
+                }
+            }
+        }
     }
 
     private void checkHandlers() {

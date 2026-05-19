@@ -5,10 +5,13 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import tech.ydb.mv.SqlConstants;
 import tech.ydb.mv.support.MvIssuePrinter;
+import tech.ydb.mv.model.MvIssue;
 import tech.ydb.mv.model.MvMetadata;
 import tech.ydb.mv.model.MvJoinCondition;
 import tech.ydb.mv.model.MvJoinMode;
 import tech.ydb.mv.model.MvTableInfo;
+
+import tech.ydb.table.values.PrimitiveType;
 
 /**
  *
@@ -396,6 +399,68 @@ WARNING: Missing index on columns [c3, c4] for table `schema3/main_table` used a
         Assertions.assertFalse(mc.isValid());
         Assertions.assertEquals(3, mc.getErrors().size());
         Assertions.assertEquals(2, mc.getWarnings().size());
+    }
+
+    @Test
+    public void missingOutputColumnTypeTest() {
+        String sql = """
+CREATE ASYNC MATERIALIZED VIEW `schema3/mv_mismatch` AS
+SELECT main.id AS main_id, main.c1 AS c1
+FROM `schema3/main_table` AS main;
+
+CREATE ASYNC HANDLER `schema3/h_mismatch` CONSUMER iddqd
+  PROCESS `schema3/mv_mismatch`,
+  INPUT `schema3/main_table` CHANGEFEED cf1 AS STREAM;
+""";
+        MvMetadata mc = new MvSqlParser(sql).fill();
+        Assertions.assertTrue(mc.isValid());
+
+        HashMap<String, MvTableInfo> info = new HashMap<>();
+        info.put("schema3/main_table", SqlConstants.tiMainTable("schema3/main_table"));
+        info.put("schema3/mv_mismatch", MvTableInfo.newBuilder("schema3/mv_mismatch")
+                .addColumn("id_main", PrimitiveType.Int32)
+                .addColumn("c1", PrimitiveType.Int32)
+                .addKey("id_main")
+                .build());
+
+        MvDescriber dummy = (tabname, destination) -> info.get(tabname);
+        mc.linkAndValidate(dummy);
+
+        Assertions.assertFalse(mc.isValid());
+        Assertions.assertTrue(mc.getErrors().stream()
+                .anyMatch(MvIssue.UnknownOutputColumn.class::isInstance));
+        Assertions.assertFalse(mc.getErrors().stream()
+                .anyMatch(MvIssue.MissingOutputColumnType.class::isInstance));
+    }
+
+    @Test
+    public void missingOutputColumnTypeForComputationTest() {
+        String sql = """
+CREATE ASYNC MATERIALIZED VIEW `schema3/mv_mismatch` AS
+SELECT main.id AS id, COMPUTE #[ CAST(1 AS Int32) ]# AS bad_name
+FROM `schema3/main_table` AS main;
+
+CREATE ASYNC HANDLER `schema3/h_mismatch` CONSUMER iddqd
+  PROCESS `schema3/mv_mismatch`,
+  INPUT `schema3/main_table` CHANGEFEED cf1 AS STREAM;
+""";
+        MvMetadata mc = new MvSqlParser(sql).fill();
+        Assertions.assertTrue(mc.isValid());
+
+        HashMap<String, MvTableInfo> info = new HashMap<>();
+        info.put("schema3/main_table", SqlConstants.tiMainTable("schema3/main_table"));
+        info.put("schema3/mv_mismatch", MvTableInfo.newBuilder("schema3/mv_mismatch")
+                .addColumn("id", PrimitiveType.Int32)
+                .addColumn("good_name", PrimitiveType.Int32)
+                .addKey("id")
+                .build());
+
+        MvDescriber dummy = (tabname, destination) -> info.get(tabname);
+        mc.linkAndValidate(dummy);
+
+        Assertions.assertFalse(mc.isValid());
+        Assertions.assertTrue(mc.getErrors().stream()
+                .anyMatch(MvIssue.MissingOutputColumnType.class::isInstance));
     }
 
     private void checkJoinCondition(MvJoinCondition cond,

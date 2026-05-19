@@ -21,6 +21,7 @@ import tech.ydb.mv.model.MvMetadata;
 import tech.ydb.mv.model.MvDictionarySettings;
 import tech.ydb.mv.model.MvHandler;
 import tech.ydb.mv.model.MvHandlerSettings;
+import tech.ydb.mv.model.MvIssue;
 import tech.ydb.mv.model.MvScanSettings;
 import tech.ydb.mv.parser.MvDescriberYdb;
 import tech.ydb.mv.parser.MvStreamBuilder;
@@ -248,6 +249,11 @@ public class MvService implements MvApi {
             handlers.remove(name);
         }
         MvMetadata m = loadMetadata(ydb, name);
+        if (!m.isValid()) {
+            throw new IllegalStateException(
+                    "Refusing to start handler `" + name + "`: "
+                    + formatMetadataErrors(m));
+        }
         appendDictHist(m);
         MvHandler handler = m.getHandlers().get(name);
         if (handler == null) {
@@ -460,8 +466,25 @@ public class MvService implements MvApi {
             LOG.warn("Parser produced errors, metadata retrieval skipped.");
         } else {
             LOG.info("Loading metadata and performing validation...");
-            m.linkAndValidate(new MvDescriberYdb(ydb));
+            if (!m.linkAndValidate(new MvDescriberYdb(ydb))) {
+                LOG.warn("Metadata validation failed for handler `{}`: {}",
+                        handlerName, formatMetadataErrors(m));
+            }
         }
         return m;
+    }
+
+    private static String formatMetadataErrors(MvMetadata metadata) {
+        if (metadata.getErrors().isEmpty()) {
+            return "configuration errors";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (MvIssue issue : metadata.getErrors()) {
+            if (sb.length() > 0) {
+                sb.append("; ");
+            }
+            sb.append(issue.getMessage());
+        }
+        return sb.toString();
     }
 }

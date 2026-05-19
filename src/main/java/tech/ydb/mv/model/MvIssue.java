@@ -253,6 +253,27 @@ public interface MvIssue extends MvSqlPosHolder {
         }
     }
 
+    public static class MissingOutputColumnType extends Error {
+
+        private final MvViewExpr target;
+        private final MvColumn column;
+
+        public MissingOutputColumnType(MvViewExpr target, MvColumn column) {
+            super(column.getSqlPos());
+            this.target = target;
+            this.column = column;
+        }
+
+        @Override
+        public String getMessage() {
+            return "Missing data type for output column `" + column.getName()
+                    + "` in target `" + target.getName()
+                    + "` as " + target.getAlias()
+                    + " at " + sqlPos
+                    + " (column name may not match the destination table)";
+        }
+    }
+
     public static class IllegalOutputReference extends Error {
 
         private final MvViewExpr target;
