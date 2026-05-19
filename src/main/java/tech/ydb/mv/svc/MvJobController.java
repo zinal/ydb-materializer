@@ -277,16 +277,25 @@ public class MvJobController implements AutoCloseable {
         }
         // One scan per filter (e.g. per MV part affected by the changes)
         var committer = new MvDictionaryCommitter(dictScan, changes, filters.size());
+        int started = 0;
+        boolean refused = false;
         for (var filter : filters) {
             LOG.info("Initiating dictionary refresh scan for target `{}` as {} in handler `{}`",
                     filter.getTarget().getName(), filter.getTarget().getAlias(),
                     context.getHandler().getName());
             boolean okay = context.startScan(filter, committer, settings, applyManager);
-            if (!okay) {
+            if (okay) {
+                started++;
+            } else {
+                refused = true;
                 LOG.error("Dictionary refresh scan REFUSED for target `{}` as {} in handler `{}`",
                         filter.getTarget().getName(), filter.getTarget().getAlias(),
                         context.getHandler().getName());
             }
+        }
+        committer.setExpectedScans(started);
+        if (refused) {
+            committer.abort();
         }
     }
 

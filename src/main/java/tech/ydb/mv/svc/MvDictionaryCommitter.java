@@ -15,15 +15,25 @@ class MvDictionaryCommitter implements MvScanCompletion {
 
     private final MvDictionaryScan dictScan;
     private final MvChangesMultiDict changes;
-    private final int totalCounter;
+    private final AtomicInteger totalCounter = new AtomicInteger(0);
     private final AtomicInteger scanCounter = new AtomicInteger(0);
     private final AtomicInteger processingCounter = new AtomicInteger(0);
     private final AtomicBoolean completed = new AtomicBoolean(false);
+    private final AtomicBoolean commitPositions = new AtomicBoolean(true);
 
-    public MvDictionaryCommitter(MvDictionaryScan dictScan, MvChangesMultiDict changes, int totalCounter) {
+    public MvDictionaryCommitter(MvDictionaryScan dictScan, MvChangesMultiDict changes, int initialTotal) {
         this.dictScan = dictScan;
         this.changes = changes;
-        this.totalCounter = totalCounter;
+        this.totalCounter.set(initialTotal);
+    }
+
+    void setExpectedScans(int count) {
+        totalCounter.set(count);
+    }
+
+    void abort() {
+        commitPositions.set(false);
+        completeIf(scanCounter.get(), processingCounter.get());
     }
 
     @Override
@@ -45,7 +55,8 @@ class MvDictionaryCommitter implements MvScanCompletion {
     }
 
     private void completeIf(int c1, int c2) {
-        if (c1 >= totalCounter && c2 >= totalCounter) {
+        int tc = totalCounter.get();
+        if (c1 >= tc && c2 >= tc) {
             if (completed.getAndSet(true)) {
                 return; // already completed
             }
@@ -54,6 +65,12 @@ class MvDictionaryCommitter implements MvScanCompletion {
     }
 
     private void complete() {
+        if (!commitPositions.get()) {
+            LOG.info("Dictionary refresh aborted for handler `{}`, "
+                    + "dictionary positions not updated",
+                    dictScan.getHandler().getName());
+            return;
+        }
         LOG.info("Updating dictionary scan positions for handler `{}`",
                 dictScan.getHandler().getName());
         dictScan.commitAll(changes);

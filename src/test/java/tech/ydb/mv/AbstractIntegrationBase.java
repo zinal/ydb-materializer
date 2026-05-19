@@ -6,8 +6,10 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -25,10 +27,13 @@ import tech.ydb.table.result.ResultSetReader;
 import tech.ydb.test.junit5.YdbHelperExtension;
 
 import tech.ydb.mv.data.YdbConv;
+import tech.ydb.mv.data.YdbStruct;
+import tech.ydb.mv.data.YdbUnsigned;
 import tech.ydb.mv.mgt.MvBatchSettings;
 import tech.ydb.mv.support.YdbMisc;
 import tech.ydb.mv.svc.MvService;
 import tech.ydb.table.query.Params;
+import tech.ydb.table.values.PrimitiveValue;
 
 /**
  *
@@ -508,6 +513,110 @@ INSERT INTO `test1/sub_table5` (c21,c22) VALUES
     protected static int checkViewOutput(MvService svc, String viewName,
             String sqlMain, boolean showNormal) {
         return checkViewOutput(svc.getYdb(), viewName, sqlMain, showNormal, "id");
+    }
+
+    /**
+     * Read committed dictionary-history scan position for a handler and source
+     * table. The position is stored in the scan control table and matches the
+     * {@code dict_hist} row key of the last consumed change.
+     */
+    protected static Optional<YdbStruct> readDictionaryScanPosition(YdbConnector conn,
+            String jobName, String dictTableName) {
+        String controlTable = conn.getProperty(MvConfig.CONF_SCAN_TABLE, MvConfig.DEF_SCAN_TABLE);
+        var rsr = conn.sqlRead(
+                "DECLARE $job_name AS Text; DECLARE $table_name AS Text; "
+                + "SELECT key_position FROM `" + MvConfig.safe(controlTable) + "` "
+                + "WHERE job_name=$job_name AND table_name=$table_name;",
+                Params.of(
+                        "$job_name", PrimitiveValue.newText(jobName),
+                        "$table_name", PrimitiveValue.newText(dictTableName)
+                )).getResultSet(0);
+        if (!rsr.next()) {
+            return Optional.empty();
+        }
+        String json = rsr.getColumn(0).getJsonDocument();
+        if (json == null || json.isBlank() || "{}".equals(json)) {
+            return Optional.empty();
+        }
+        return Optional.of(YdbStruct.fromJson(json));
+    }
+
+    /**
+     * Count rows in {@code dict_hist} for the given source that are strictly
+     * after {@code afterExclusive}. When {@code afterExclusive} is empty, all
+     * rows for the source are counted.
+     */
+    protected static long countDictHistRowsAfter(YdbConnector conn, String dictHistTable,
+            String src, Optional<YdbStruct> afterExclusive) {
+        if (afterExclusive.isEmpty()) {
+            var rsr = conn.sqlRead(
+                    "DECLARE $src AS Text; "
+                    + "SELECT COUNT(*) AS cnt FROM `" + MvConfig.safe(dictHistTable) + "` "
+                    + "WHERE src=$src;",
+                    Params.of("$src", PrimitiveValue.newText(src))
+            ).getResultSet(0);
+            rsr.next();
+            return rsr.getColumn(0).getUint64();
+        }
+        YdbStruct pos = afterExclusive.get();
+        var rsr = conn.sqlRead(
+                "DECLARE $src AS Text; DECLARE $tv AS Timestamp; "
+                + "DECLARE $seqno AS Uint64; DECLARE $key_text AS Text; "
+                + "SELECT COUNT(*) AS cnt FROM `" + MvConfig.safe(dictHistTable) + "` "
+                + "WHERE src=$src AND (tv, seqno, key_text) > ($tv, $seqno, $key_text);",
+                Params.of(
+                        "$src", PrimitiveValue.newText(src),
+                        "$tv", PrimitiveValue.newTimestamp(dictHistTv(pos)),
+                        "$seqno", PrimitiveValue.newUint64(dictHistSeqno(pos).getValue()),
+                        "$key_text", PrimitiveValue.newText(dictHistKeyText(pos))
+                )).getResultSet(0);
+        rsr.next();
+        return rsr.getColumn(0).getUint64();
+    }
+
+    /**
+     * Compare two committed dictionary-history scan positions (dict_hist keys).
+     */
+    protected static int compareDictHistPositions(YdbStruct left, YdbStruct right) {
+        int cmp = dictHistTv(left).compareTo(dictHistTv(right));
+        if (cmp != 0) {
+            return cmp;
+        }
+        cmp = dictHistSeqno(left).compareTo(dictHistSeqno(right));
+        if (cmp != 0) {
+            return cmp;
+        }
+        return dictHistKeyText(left).compareTo(dictHistKeyText(right));
+    }
+
+    private static Instant dictHistTv(YdbStruct pos) {
+        return (Instant) pos.get("tv");
+    }
+
+    private static YdbUnsigned dictHistSeqno(YdbStruct pos) {
+        return (YdbUnsigned) pos.get("seqno");
+    }
+
+    private static String dictHistKeyText(YdbStruct pos) {
+        return (String) pos.get("key_text");
+    }
+
+    /**
+     * Poll until {@code dict_hist} has at least one row for {@code src} after
+     * {@code afterExclusive}, or until {@code timeoutMs} elapses.
+     */
+    protected static long waitForDictHistRowsAfter(YdbConnector conn, String dictHistTable,
+            String src, Optional<YdbStruct> afterExclusive, long timeoutMs) {
+        final long deadline = System.currentTimeMillis() + timeoutMs;
+        long count = 0L;
+        do {
+            count = countDictHistRowsAfter(conn, dictHistTable, src, afterExclusive);
+            if (count > 0L) {
+                return count;
+            }
+            pause(250L);
+        } while (System.currentTimeMillis() < deadline);
+        return count;
     }
 
 }
