@@ -56,6 +56,13 @@ class ActionKeysTransform extends ActionKeysAbstract {
 
     @Override
     protected void process(MvCommitHandler handler, List<MvApplyTask> tasks) {
+        boolean batch = false;
+        for (MvApplyTask task : tasks) {
+            if (task.isBatch()) {
+                batch = true;
+                break;
+            }
+        }
         ArrayList<MvChangeRecord> output = new ArrayList<>(2 * tasks.size());
         for (MvApplyTask task : tasks) {
             MvChangeRecord cr = task.getData();
@@ -74,7 +81,8 @@ class ActionKeysTransform extends ActionKeysAbstract {
             if (key != null) {
                 var opType = getOperationType(task.getData());
                 LOG.trace("Result key: {}, action {}", key, opType);
-                output.add(new MvChangeRecord(key, task.getData().getTv(), opType));
+                output.add(new MvChangeRecord(key, task.getData().getTv(), opType)
+                        .withBatch(batch));
             }
         }
         if (!output.isEmpty()) {

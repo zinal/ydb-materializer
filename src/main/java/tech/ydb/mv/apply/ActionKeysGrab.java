@@ -67,6 +67,13 @@ class ActionKeysGrab extends ActionKeysAbstract {
                     + rows.getColumnCount() + ", expected: " + keyInfo.size());
         }
         // Convert the keys to change records.
+        boolean batch = false;
+        for (MvApplyTask task : tasks) {
+            if (task.isBatch()) {
+                batch = true;
+                break;
+            }
+        }
         ArrayList<MvChangeRecord> output = new ArrayList<>(rows.getRowCount());
         while (rows.next()) {
             Comparable<?>[] values = new Comparable<?>[keyInfo.size()];
@@ -74,7 +81,7 @@ class ActionKeysGrab extends ActionKeysAbstract {
                 values[pos] = YdbConv.toPojo(rows.getColumn(pos).getValue());
             }
             MvKey key = new MvKey(keyInfo, values);
-            output.add(new MvChangeRecord(key, tvNow));
+            output.add(new MvChangeRecord(key, tvNow).withBatch(batch));
         }
         // Allow for extra operations before the actual commit.
         handler.reserve(output.size());

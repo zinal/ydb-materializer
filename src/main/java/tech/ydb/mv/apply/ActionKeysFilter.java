@@ -60,12 +60,13 @@ class ActionKeysFilter extends ActionBase implements MvApplyAction {
 
     private void process(MvCommitHandler handler, List<MvApplyTask> tasks) {
         Instant tv = Instant.now();
+        boolean batch = hasBatchInput(tasks);
         var rsr = readTaskRows(tasks);
         var records = new ArrayList<MvChangeRecord>(rsr.getRowCount());
         while (rsr.next()) {
             var row = YdbConv.toPojoRow(rsr);
             if (filter.matches(row)) {
-                var record = convert(row, tv);
+                var record = convert(row, tv, batch);
                 records.add(record);
                 LOG.trace("[{}] Matched row {} -> {}", instance, row, record);
             } else {
@@ -80,13 +81,23 @@ class ActionKeysFilter extends ActionBase implements MvApplyAction {
         }
     }
 
-    private MvChangeRecord convert(Comparable<?>[] row, Instant tv) {
+    private static boolean hasBatchInput(List<MvApplyTask> tasks) {
+        for (MvApplyTask task : tasks) {
+            if (task.isBatch()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private MvChangeRecord convert(Comparable<?>[] row, Instant tv, boolean batch) {
         Comparable<?>[] keyPart = new Comparable<?>[topmostKey.size()];
         for (int i = 0; i < keyPart.length; ++i) {
             keyPart[i] = row[i];
         }
         MvKey key = new MvKey(topmostKey, keyPart);
-        return new MvChangeRecord(key, tv, MvChangeRecord.OpType.UPSERT);
+        return new MvChangeRecord(key, tv, MvChangeRecord.OpType.UPSERT)
+                .withBatch(batch);
     }
 
 }

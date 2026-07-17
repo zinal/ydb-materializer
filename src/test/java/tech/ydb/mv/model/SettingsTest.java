@@ -47,12 +47,14 @@ public class SettingsTest {
         Assertions.assertEquals(4, src.getCdcReaderThreads());
         Assertions.assertEquals(4, src.getApplyThreads());
         Assertions.assertEquals(10000, src.getApplyQueueSize());
+        Assertions.assertEquals(40, src.getApplyQueuePercent());
         Assertions.assertEquals(1000, src.getSelectBatchSize());
         Assertions.assertEquals(500, src.getUpsertBatchSize());
         Assertions.assertEquals(28800, src.getDictionaryScanSeconds());
         Assertions.assertEquals(30, src.getQueryTimeoutSeconds());
 
         src.setApplyQueueSize(123);
+        src.setApplyQueuePercent(55);
         src.setApplyThreads(456);
         src.setCdcReaderThreads(789);
         src.setDictionaryScanSeconds(512);
@@ -66,6 +68,7 @@ public class SettingsTest {
 
         Assertions.assertEquals(src, dst);
         Assertions.assertEquals(44, dst.getQueryTimeoutSeconds());
+        Assertions.assertEquals(55, dst.getApplyQueuePercent());
 
         var copy = new MvHandlerSettings(src);
         Assertions.assertEquals(src, copy);
@@ -95,6 +98,7 @@ public class SettingsTest {
         props.setProperty(MvConfig.CONF_MAX_ROW_CHANGES, "104");
         props.setProperty(MvConfig.CONF_APPLY_THREADS, "105");
         props.setProperty(MvConfig.CONF_APPLY_QUEUE, "106");
+        props.setProperty(MvConfig.CONF_APPLY_QUEUE_PERCENT, "77");
         props.setProperty(MvConfig.CONF_BATCH_SELECT, "107");
         props.setProperty(MvConfig.CONF_DICT_SCAN_SECONDS, "108");
         props.setProperty(MvConfig.CONF_QUERY_TIMEOUT, "109");
@@ -109,6 +113,7 @@ public class SettingsTest {
         Assertions.assertEquals(102, handler.getCdcReaderThreads());
         Assertions.assertEquals(105, handler.getApplyThreads());
         Assertions.assertEquals(106, handler.getApplyQueueSize());
+        Assertions.assertEquals(77, handler.getApplyQueuePercent());
         Assertions.assertEquals(107, handler.getSelectBatchSize());
         Assertions.assertEquals(103, handler.getUpsertBatchSize());
         Assertions.assertEquals(108, handler.getDictionaryScanSeconds());

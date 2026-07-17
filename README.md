@@ -405,6 +405,7 @@ The configuration file is an XML properties file that defines connection paramet
 <entry key="job.cdc.threads">4</entry>
 <entry key="job.apply.threads">4</entry>
 <entry key="job.apply.queue">10000</entry>
+<entry key="job.apply.queue.percent">40</entry>
 <entry key="job.batch.select">1000</entry>
 <entry key="job.batch.upsert">500</entry>
 <entry key="job.max.row.changes">100000</entry>
@@ -469,6 +470,7 @@ The configuration file is an XML properties file that defines connection paramet
 - `job.cdc.threads` - Number of CDC reader threads
 - `job.apply.threads` - Number of apply worker threads
 - `job.apply.queue` - Max elements in apply queue per thread
+- `job.apply.queue.percent` - Percent of the apply queue reserved for interactive (non-batch) operations (default: 40)
 - `job.batch.select` - Batch size for SELECT operations
 - `job.batch.upsert` - Batch size for UPSERT or DELETE operations
 - `job.max.row.changes` - Maximum number of changes per individual table processed in one iteration
@@ -691,6 +693,7 @@ The `job_settings` can be omitted (so that the default parameters will be used, 
     "cdcReaderThreads": 4,                # job.cdc.threads
     "applyThreads": 4,                    # job.apply.threads
     "applyQueueSize": 10000,              # job.apply.queue
+    "applyQueuePercent": 40,              # job.apply.queue.percent
     "selectBatchSize": 1000,              # job.batch.select
     "upsertBatchSize": 500,               # job.batch.upsert
     "dictionaryScanSeconds": 28800,       # job.dict.scan.seconds
@@ -818,6 +821,9 @@ Handler job parameters below control how aggressively the YDB Materializer consu
   - Maximum number of changes queued for processing (size of the buffer between CDC readers and apply workers, as well as between the apply workers performing the key fetch operation and the apply workers performing the MV refresh). Each handler uses a counter (one per handler) for the total number of queued elements, and uses its value to pause reading extra input data from the CDC topics when the queues become too large. This effectively limits the memory used by the intermediate data inside the instance of the Materializer running the particular handler.
   - **STREAM mode**: a larger queue smooths short‑term spikes in incoming CDC traffic; if it is too small, CDC readers are throttled more often and end‑to‑end latency increases. If it is too large, the job may accumulate many pending changes in memory, increasing the memory usage and the time needed to drain the backlog.
   - **BATCH mode and scans**: defines how many prepared batches can wait for execution. Larger queues help keep apply workers busy but also increase memory footprint.
+
+- **`job.apply.queue.percent` / `applyQueuePercent`**
+  - Percent of the apply queue reserved for interactive (STREAM/CDC) operations. Default: `40`. In the regular (non-forced) submit path, batch work (scans and dictionary refresh) cannot occupy more than `applyQueueSize * (100 - applyQueuePercent) / 100` queue slots. Interactive work may still use the full queue up to `applyQueueSize`. This does not change the per-worker processing model (`drainTo` takes the current backlog as a whole), but prevents batch ingress from keeping the queue completely full and blocking STREAM enqueues. Forced submission of derived tasks (used to avoid deadlocks with key-based worker partitioning) may still temporarily exceed the limits, but remains accounted in the queue counters.
 
 - **`job.batch.select` / `selectBatchSize`**
   - Limits how many source rows are read in a single `SELECT` statement when collecting data for a batch of changes.

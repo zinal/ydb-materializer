@@ -169,6 +169,17 @@ public class MvName {
     public static final String CONF_APPLY_QUEUE = "job.apply.queue";
 
     /**
+     * Handler setting: percent of the apply queue reserved for interactive
+     * (non-batch) operations.
+     */
+    public static final String CONF_APPLY_QUEUE_PERCENT = "job.apply.queue.percent";
+
+    /**
+     * Default percent of the apply queue reserved for interactive operations.
+     */
+    public static final int DEF_APPLY_QUEUE_PERCENT = 40;
+
+    /**
      * Handler setting: number of rows to be selected for batch processing.
      */
     public static final String CONF_BATCH_SELECT = "job.batch.select";
