@@ -193,7 +193,7 @@ public class MvScanFeeder {
             ArrayList<MvChangeRecord> output = new ArrayList<>();
             while (rsr.next()) {
                 key = new MvKey(rsr, keyInfo);
-                output.add(new MvChangeRecord(key, ctx.getTvStart()));
+                output.add(new MvChangeRecord(key, ctx.getTvStart()).withBatch(true));
             }
             ctx.setCurrentKey(key);
             handler = new MvScanCommitHandler(ctx,

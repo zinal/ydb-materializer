@@ -5,8 +5,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import tech.ydb.table.TableClient;
 
@@ -33,8 +33,8 @@ public class MvApplyManager implements MvSink {
 
     private final MvActionContext context;
     private final MvApplyWorker[] workers;
-    private final AtomicInteger queueSize;
-    private final int queueLimit;
+    private final MvApplyQueueCounters queueCounters;
+    private final MvApplyQueuePolicy queuePolicy;
 
     // source table name -> table apply configuration data
     private final HashMap<String, MvApply.Source> sourceConfigs = new HashMap<>();
@@ -48,8 +48,10 @@ public class MvApplyManager implements MvSink {
         for (int i = 0; i < workerCount; ++i) {
             workers[i] = new MvApplyWorker(this, i);
         }
-        this.queueSize = new AtomicInteger(0);
-        this.queueLimit = jobContext.getSettings().getApplyQueueSize();
+        this.queueCounters = new MvApplyQueueCounters();
+        this.queuePolicy = new MvApplyQueuePolicy(
+                jobContext.getSettings().getApplyQueueSize(),
+                jobContext.getSettings().getApplyQueuePercent());
         new MvApply.Configurator(this.context)
                 .build(this.sourceConfigs, this.targetConfigs);
     }
@@ -71,24 +73,58 @@ public class MvApplyManager implements MvSink {
     }
 
     public int getQueueLimit() {
-        return queueLimit;
+        return queuePolicy.getQueueLimit();
     }
 
     public int getQueueSize() {
-        return queueSize.get();
+        return queueCounters.getQueueSize();
     }
 
-    protected final int incrementQueueSize() {
-        return queueSize.incrementAndGet();
+    public int getBatchQueueSize() {
+        return queueCounters.getBatchQueueSize();
     }
 
-    protected final int decrementQueueSize(int count) {
-        int temp = queueSize.addAndGet(-1 * count);
-        if (temp < 0) {
-            LOG.error("Queue size below zero: {}", temp);
-            return queueSize.addAndGet(-1 * temp);
+    public int getMaxBatchQueueSize() {
+        return queuePolicy.getMaxBatchQueue();
+    }
+
+    protected final int incrementQueueSize(boolean batch) {
+        return queueCounters.increment(batch);
+    }
+
+    protected final int decrementQueueSize(int count, int batchCount) {
+        return queueCounters.decrement(count, batchCount);
+    }
+
+    /**
+     * Detect whether a submission should be treated as batch work.
+     *
+     * @param changes Change records being submitted.
+     * @return {@code true} if at least one record is marked as batch.
+     */
+    static boolean detectBatchSubmission(Collection<MvChangeRecord> changes) {
+        for (MvChangeRecord change : changes) {
+            if (change.isBatch()) {
+                return true;
+            }
         }
-        return temp;
+        return false;
+    }
+
+    /**
+     * Normalize batch markers so the whole submission shares one flag.
+     *
+     * @param changes Input change records.
+     * @param batch Desired batch marker for every record.
+     * @return Records with the normalized batch marker.
+     */
+    static List<MvChangeRecord> normalizeBatchFlag(
+            Collection<MvChangeRecord> changes, boolean batch) {
+        ArrayList<MvChangeRecord> normalized = new ArrayList<>(changes.size());
+        for (MvChangeRecord change : changes) {
+            normalized.add(change.withBatch(batch));
+        }
+        return normalized;
     }
 
     /**
@@ -208,22 +244,26 @@ public class MvApplyManager implements MvSink {
         if (actions == null) {
             actions = sourceConfig.getActions();
         }
-        int count = changes.size();
-        ArrayList<MvApplyTask> curr = new ArrayList<>(count);
-        for (MvChangeRecord change : changes) {
+        boolean batch = detectBatchSubmission(changes);
+        List<MvChangeRecord> normalized = normalizeBatchFlag(changes, batch);
+        ArrayList<MvApplyTask> curr = new ArrayList<>(normalized.size());
+        for (MvChangeRecord change : normalized) {
             if (sourceConfig.getTableInfo() != change.getKey().getTableInfo()) {
                 throw new IllegalArgumentException("Mixed input tables on submission");
             }
             curr.add(new MvApplyTask(change, handler, actions));
         }
         if (immediate) {
+            // Forced path may overflow the queue (deadlock avoidance for
+            // key-partitioned fan-out), but still updates the counters.
             curr.forEach(task -> getWorker(task, sourceConfig).submit(task));
             return true;
         }
         int position = 0;
         while (isRunning() && position < curr.size()) {
-            // backpressure condition - wait until queue space is available
-            if (getQueueSize() < queueLimit) {
+            // Admission control: interactive may use the full queue; batch is
+            // capped so that applyQueuePercent stays available for interactive.
+            if (queuePolicy.canAdmit(batch, getQueueSize(), getBatchQueueSize())) {
                 MvApplyTask task = curr.get(position);
                 getWorker(task, sourceConfig).submit(task);
                 ++position;
