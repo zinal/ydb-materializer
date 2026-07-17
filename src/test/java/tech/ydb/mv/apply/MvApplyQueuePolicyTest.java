@@ -30,23 +30,33 @@ public class MvApplyQueuePolicyTest {
 
     @Test
     public void interactiveCanUseFullQueueWhenNoBatch() {
-        MvApplyQueuePolicy policy = new MvApplyQueuePolicy(100, 40);
+        MvApplyQueuePolicy policy = new MvApplyQueuePolicy(2000, 40);
 
         Assertions.assertTrue(policy.canAdmit(false, 0, 0));
-        Assertions.assertTrue(policy.canAdmit(false, 99, 0));
-        Assertions.assertFalse(policy.canAdmit(false, 100, 0));
+        Assertions.assertTrue(policy.canAdmit(false, 1999, 0));
+        Assertions.assertFalse(policy.canAdmit(false, 2000, 0));
     }
 
     @Test
     public void clampsPercentAndHandlesEdges() {
-        Assertions.assertEquals(0, new MvApplyQueuePolicy(100, 100).getMaxBatchQueue());
-        Assertions.assertEquals(100, new MvApplyQueuePolicy(100, 0).getMaxBatchQueue());
-        Assertions.assertEquals(0, new MvApplyQueuePolicy(100, 150).getMaxBatchQueue());
-        Assertions.assertEquals(100, new MvApplyQueuePolicy(100, -10).getMaxBatchQueue());
+        Assertions.assertEquals(0, new MvApplyQueuePolicy(1000, 100).getMaxBatchQueue());
+        Assertions.assertEquals(1000, new MvApplyQueuePolicy(1000, 0).getMaxBatchQueue());
+        Assertions.assertEquals(0, new MvApplyQueuePolicy(1000, 150).getMaxBatchQueue());
+        Assertions.assertEquals(1000, new MvApplyQueuePolicy(1000, -10).getMaxBatchQueue());
 
-        MvApplyQueuePolicy noBatch = new MvApplyQueuePolicy(50, 100);
+        MvApplyQueuePolicy noBatch = new MvApplyQueuePolicy(1000, 100);
         Assertions.assertFalse(noBatch.canAdmit(true, 0, 0));
         Assertions.assertTrue(noBatch.canAdmit(false, 0, 0));
+    }
+
+    @Test
+    public void raisesQueueLimitToMinimum() {
+        MvApplyQueuePolicy policy = new MvApplyQueuePolicy(50, 40);
+
+        Assertions.assertEquals(MvApplyQueuePolicy.MIN_QUEUE_LIMIT, policy.getQueueLimit());
+        Assertions.assertEquals(600, policy.getMaxBatchQueue());
+        Assertions.assertTrue(policy.canAdmit(false, 999, 0));
+        Assertions.assertFalse(policy.canAdmit(false, 1000, 0));
     }
 
 }

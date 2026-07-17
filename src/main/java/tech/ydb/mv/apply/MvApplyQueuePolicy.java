@@ -10,17 +10,20 @@ package tech.ydb.mv.apply;
  */
 final class MvApplyQueuePolicy {
 
+    static final int MIN_QUEUE_LIMIT = 1000;
+
     private final int queueLimit;
     private final int applyQueuePercent;
     private final int maxBatchQueue;
 
     /**
-     * @param queueLimit Absolute apply queue limit.
+     * @param queueLimit Absolute apply queue limit. Values below
+     * {@link #MIN_QUEUE_LIMIT} are raised to that minimum.
      * @param applyQueuePercent Percent of the queue reserved for interactive
      * (non-batch) operations, in {@code [0, 100]}.
      */
     MvApplyQueuePolicy(int queueLimit, int applyQueuePercent) {
-        this.queueLimit = Math.max(0, queueLimit);
+        this.queueLimit = Math.max(MIN_QUEUE_LIMIT, queueLimit);
         this.applyQueuePercent = clampPercent(applyQueuePercent);
         this.maxBatchQueue = (int) ((long) this.queueLimit
                 * (100L - this.applyQueuePercent) / 100L);
