@@ -81,15 +81,6 @@ class ActionKeysFilter extends ActionBase implements MvApplyAction {
         }
     }
 
-    private static boolean hasBatchInput(List<MvApplyTask> tasks) {
-        for (MvApplyTask task : tasks) {
-            if (task.isBatch()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private MvChangeRecord convert(Comparable<?>[] row, Instant tv, boolean batch) {
         Comparable<?>[] keyPart = new Comparable<?>[topmostKey.size()];
         for (int i = 0; i < keyPart.length; ++i) {

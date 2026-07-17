@@ -67,13 +67,7 @@ class ActionKeysGrab extends ActionKeysAbstract {
                     + rows.getColumnCount() + ", expected: " + keyInfo.size());
         }
         // Convert the keys to change records.
-        boolean batch = false;
-        for (MvApplyTask task : tasks) {
-            if (task.isBatch()) {
-                batch = true;
-                break;
-            }
-        }
+        boolean batch = hasBatchInput(tasks);
         ArrayList<MvChangeRecord> output = new ArrayList<>(rows.getRowCount());
         while (rows.next()) {
             Comparable<?>[] values = new Comparable<?>[keyInfo.size()];
