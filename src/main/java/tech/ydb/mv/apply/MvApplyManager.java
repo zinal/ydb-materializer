@@ -34,7 +34,8 @@ public class MvApplyManager implements MvSink {
     private final MvActionContext context;
     private final MvApplyWorker[] workers;
     private final AtomicInteger queueSize;
-    private final int queueLimit;
+    private final AtomicInteger batchQueueSize;
+    private final MvApplyQueuePolicy queuePolicy;
 
     // source table name -> table apply configuration data
     private final HashMap<String, MvApply.Source> sourceConfigs = new HashMap<>();
@@ -49,7 +50,10 @@ public class MvApplyManager implements MvSink {
             workers[i] = new MvApplyWorker(this, i);
         }
         this.queueSize = new AtomicInteger(0);
-        this.queueLimit = jobContext.getSettings().getApplyQueueSize();
+        this.batchQueueSize = new AtomicInteger(0);
+        this.queuePolicy = new MvApplyQueuePolicy(
+                jobContext.getSettings().getApplyQueueSize(),
+                jobContext.getSettings().getApplyQueuePercent());
         new MvApply.Configurator(this.context)
                 .build(this.sourceConfigs, this.targetConfigs);
     }
@@ -71,18 +75,36 @@ public class MvApplyManager implements MvSink {
     }
 
     public int getQueueLimit() {
-        return queueLimit;
+        return queuePolicy.getQueueLimit();
     }
 
     public int getQueueSize() {
         return queueSize.get();
     }
 
-    protected final int incrementQueueSize() {
+    public int getBatchQueueSize() {
+        return batchQueueSize.get();
+    }
+
+    public int getMaxBatchQueueSize() {
+        return queuePolicy.getMaxBatchQueue();
+    }
+
+    protected final int incrementQueueSize(boolean batch) {
+        if (batch) {
+            batchQueueSize.incrementAndGet();
+        }
         return queueSize.incrementAndGet();
     }
 
-    protected final int decrementQueueSize(int count) {
+    protected final int decrementQueueSize(int count, int batchCount) {
+        if (batchCount > 0) {
+            int batchTemp = batchQueueSize.addAndGet(-1 * batchCount);
+            if (batchTemp < 0) {
+                LOG.error("Batch queue size below zero: {}", batchTemp);
+                batchQueueSize.addAndGet(-1 * batchTemp);
+            }
+        }
         int temp = queueSize.addAndGet(-1 * count);
         if (temp < 0) {
             LOG.error("Queue size below zero: {}", temp);
@@ -208,22 +230,33 @@ public class MvApplyManager implements MvSink {
         if (actions == null) {
             actions = sourceConfig.getActions();
         }
+        boolean batch = false;
+        for (MvChangeRecord change : changes) {
+            if (change.isBatch()) {
+                batch = true;
+                break;
+            }
+        }
         int count = changes.size();
         ArrayList<MvApplyTask> curr = new ArrayList<>(count);
         for (MvChangeRecord change : changes) {
             if (sourceConfig.getTableInfo() != change.getKey().getTableInfo()) {
                 throw new IllegalArgumentException("Mixed input tables on submission");
             }
-            curr.add(new MvApplyTask(change, handler, actions));
+            // Normalize the whole submission to batch when any input is batch.
+            curr.add(new MvApplyTask(change.withBatch(batch), handler, actions));
         }
         if (immediate) {
+            // Forced path may overflow the queue (deadlock avoidance for
+            // key-partitioned fan-out), but still updates the counters.
             curr.forEach(task -> getWorker(task, sourceConfig).submit(task));
             return true;
         }
         int position = 0;
         while (isRunning() && position < curr.size()) {
-            // backpressure condition - wait until queue space is available
-            if (getQueueSize() < queueLimit) {
+            // Admission control: interactive may use the full queue; batch is
+            // capped so that applyQueuePercent stays available for interactive.
+            if (queuePolicy.canAdmit(batch, getQueueSize(), getBatchQueueSize())) {
                 MvApplyTask task = curr.get(position);
                 getWorker(task, sourceConfig).submit(task);
                 ++position;

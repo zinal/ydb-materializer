@@ -17,6 +17,7 @@ public class MvHandlerSettings implements Serializable {
     private int cdcReaderThreads = 4;
     private int applyThreads = 4;
     private int applyQueueSize = 10000;
+    private int applyQueuePercent = MvConfig.DEF_APPLY_QUEUE_PERCENT;
     private int selectBatchSize = 1000;
     private int upsertBatchSize = 500;
     private int dictionaryScanSeconds = 28800; // 8h
@@ -29,6 +30,7 @@ public class MvHandlerSettings implements Serializable {
         this.cdcReaderThreads = src.cdcReaderThreads;
         this.applyThreads = src.applyThreads;
         this.applyQueueSize = src.applyQueueSize;
+        this.applyQueuePercent = src.applyQueuePercent;
         this.selectBatchSize = src.selectBatchSize;
         this.upsertBatchSize = src.upsertBatchSize;
         this.dictionaryScanSeconds = src.dictionaryScanSeconds;
@@ -39,6 +41,8 @@ public class MvHandlerSettings implements Serializable {
         this.cdcReaderThreads = MvConfig.parseInt(props, MvConfig.CONF_CDC_THREADS, 4);
         this.applyThreads = MvConfig.parseInt(props, MvConfig.CONF_APPLY_THREADS, 4);
         this.applyQueueSize = MvConfig.parseInt(props, MvConfig.CONF_APPLY_QUEUE, 10000);
+        this.applyQueuePercent = MvConfig.parseInt(props, MvConfig.CONF_APPLY_QUEUE_PERCENT,
+                MvConfig.DEF_APPLY_QUEUE_PERCENT);
         this.selectBatchSize = MvConfig.parseInt(props, MvConfig.CONF_BATCH_SELECT, 1000);
         this.upsertBatchSize = MvConfig.parseInt(props, MvConfig.CONF_BATCH_UPSERT, 500);
         this.dictionaryScanSeconds = MvConfig.parseInt(props, MvConfig.CONF_DICT_SCAN_SECONDS, MvConfig.DEF_DICT_SCAN_SECONDS);
@@ -67,6 +71,20 @@ public class MvHandlerSettings implements Serializable {
 
     public void setApplyQueueSize(int applyQueueSize) {
         this.applyQueueSize = applyQueueSize;
+    }
+
+    /**
+     * Percent of {@link #getApplyQueueSize()} reserved for interactive
+     * (non-batch) operations.
+     *
+     * @return Value in {@code [0, 100]}, default {@code 40}.
+     */
+    public int getApplyQueuePercent() {
+        return applyQueuePercent;
+    }
+
+    public void setApplyQueuePercent(int applyQueuePercent) {
+        this.applyQueuePercent = applyQueuePercent;
     }
 
     public int getSelectBatchSize() {
@@ -107,6 +125,7 @@ public class MvHandlerSettings implements Serializable {
         hash = 37 * hash + this.cdcReaderThreads;
         hash = 37 * hash + this.applyThreads;
         hash = 37 * hash + this.applyQueueSize;
+        hash = 37 * hash + this.applyQueuePercent;
         hash = 37 * hash + this.selectBatchSize;
         hash = 37 * hash + this.upsertBatchSize;
         hash = 37 * hash + this.dictionaryScanSeconds;
@@ -133,6 +152,9 @@ public class MvHandlerSettings implements Serializable {
             return false;
         }
         if (this.applyQueueSize != other.applyQueueSize) {
+            return false;
+        }
+        if (this.applyQueuePercent != other.applyQueuePercent) {
             return false;
         }
         if (this.selectBatchSize != other.selectBatchSize) {

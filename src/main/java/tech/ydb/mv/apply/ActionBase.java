@@ -74,6 +74,19 @@ abstract class ActionBase {
         }
     }
 
+    /**
+     * @param tasks Input apply tasks.
+     * @return {@code true} if at least one task belongs to a batch flow.
+     */
+    protected static boolean hasBatchInput(List<MvApplyTask> tasks) {
+        for (MvApplyTask task : tasks) {
+            if (task.isBatch()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public int hashCode() {
         int hash = 5;

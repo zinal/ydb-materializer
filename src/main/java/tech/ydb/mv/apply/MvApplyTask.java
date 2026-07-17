@@ -41,6 +41,13 @@ public class MvApplyTask {
         return commit;
     }
 
+    /**
+     * @return {@code true} when the underlying change belongs to a batch flow.
+     */
+    public boolean isBatch() {
+        return data != null && data.isBatch();
+    }
+
     @Override
     public String toString() {
         return "MvApplyTask{" + data + '}';

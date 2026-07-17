@@ -66,10 +66,11 @@ class MvApplyWorker implements Runnable {
      * @param task The task to be added
      */
     public void submit(MvApplyTask task) {
-        owner.incrementQueueSize();
+        owner.incrementQueueSize(task.isBatch());
         queue.add(task);
         if (LOG.isTraceEnabled()) {
-            LOG.trace("Task accepted: {}, actions: {}", task.getData(), task.getActions());
+            LOG.trace("Task accepted: {}, batch: {}, actions: {}",
+                    task.getData(), task.isBatch(), task.getActions());
         }
     }
 
@@ -89,7 +90,13 @@ class MvApplyWorker implements Runnable {
         if (activeTasks.isEmpty()) {
             return 0;
         }
-        owner.decrementQueueSize(activeTasks.size());
+        int batchCount = 0;
+        for (MvApplyTask task : activeTasks) {
+            if (task.isBatch()) {
+                batchCount += 1;
+            }
+        }
+        owner.decrementQueueSize(activeTasks.size(), batchCount);
         PerAction retries = new PerAction().addItems(activeTasks).apply();
         if (!processRetries(retries)) {
             // No commit unless no retries needed, or retries succeeded.

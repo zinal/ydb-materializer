@@ -17,6 +17,7 @@ public class MvChangeRecord {
     private final OpType operationType;
     private final YdbStruct imageBefore;
     private final YdbStruct imageAfter;
+    private final boolean batch;
 
     /**
      * Create an UPSERT change record without images.
@@ -36,11 +37,7 @@ public class MvChangeRecord {
      * @param operationType Operation type.
      */
     public MvChangeRecord(MvKey key, Instant tv, OpType operationType) {
-        this.key = key;
-        this.tv = tv;
-        this.operationType = operationType;
-        this.imageBefore = YdbStruct.EMPTY;
-        this.imageAfter = YdbStruct.EMPTY;
+        this(key, tv, operationType, YdbStruct.EMPTY, YdbStruct.EMPTY, false);
     }
 
     /**
@@ -54,11 +51,27 @@ public class MvChangeRecord {
      */
     public MvChangeRecord(MvKey key, Instant tv, OpType operationType,
             YdbStruct imageBefore, YdbStruct imageAfter) {
+        this(key, tv, operationType, imageBefore, imageAfter, false);
+    }
+
+    /**
+     * Create a change record with before/after images and batch marker.
+     *
+     * @param key Table key.
+     * @param tv Timestamp/version of the change.
+     * @param operationType Operation type.
+     * @param imageBefore Row image before change (may be {@code null}).
+     * @param imageAfter Row image after change (may be {@code null}).
+     * @param batch {@code true} for scan/dictionary-driven batch work.
+     */
+    public MvChangeRecord(MvKey key, Instant tv, OpType operationType,
+            YdbStruct imageBefore, YdbStruct imageAfter, boolean batch) {
         this.key = key;
         this.tv = tv;
         this.operationType = operationType;
         this.imageBefore = (imageBefore == null) ? YdbStruct.EMPTY : imageBefore;
         this.imageAfter = (imageAfter == null) ? YdbStruct.EMPTY : imageAfter;
+        this.batch = batch;
     }
 
     public MvKey getKey() {
@@ -81,9 +94,30 @@ public class MvChangeRecord {
         return imageAfter;
     }
 
+    /**
+     * @return {@code true} if the record belongs to a scan/dictionary batch flow.
+     */
+    public boolean isBatch() {
+        return batch;
+    }
+
+    /**
+     * Return this record with the requested batch marker.
+     *
+     * @param batch Desired batch marker.
+     * @return This instance when the marker already matches, otherwise a copy.
+     */
+    public MvChangeRecord withBatch(boolean batch) {
+        if (this.batch == batch) {
+            return this;
+        }
+        return new MvChangeRecord(key, tv, operationType, imageBefore, imageAfter, batch);
+    }
+
     @Override
     public String toString() {
         return "CR{" + "key=" + key + ", op=" + operationType
+                + ", batch=" + batch
                 + ", before=" + imageBefore + ", after=" + imageAfter + '}';
     }
 
